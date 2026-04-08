@@ -1,0 +1,25 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/naengo
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate        # 스키마는 직접 관리, 자동 변경 금지
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+    show-sql: false
+
+  profiles:
+    active: local   # 기본값, 배포 시 prod로 교체
+
+jwt:
+  secret: ${JWT_SECRET}
+  secret: "your-secret-key-must-be-at-least-32-characters-long!!" # 32자 이상
+  expiration: 86400000          # 24시간 (ms)
+
+
+
