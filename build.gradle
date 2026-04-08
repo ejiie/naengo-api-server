@@ -40,9 +40,6 @@ dependencies {
     // pgvector (기존 유지 — spring-ai BOM이 버전 관리)
     implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
 
-    // JSONB 컬럼 매핑 (PostgreSQL JSONB ↔ Java Object)
-    implementation 'io.hypersistence:hypersistence-utils-hibernate-63:3.7.3'
-
     // Validation
     implementation 'org.springframework.boot:spring-boot-starter-validation'
 
