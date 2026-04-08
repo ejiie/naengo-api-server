@@ -1,9 +1,7 @@
 package com.naengo.api_server.domain.user.entity;
 
-import io.hypersistence.utils.hibernate.type.json.JsonBinaryType;
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.Type;
 
 import java.time.ZonedDateTime;
 import java.util.Map;
@@ -38,7 +36,7 @@ public class User {
     @Builder.Default
     private boolean isBlocked = false;
 
-    @Type(JsonBinaryType.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private Map<String, Object> preferences;
 
