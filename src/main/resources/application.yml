@@ -17,9 +17,11 @@ spring:
     active: local   # 기본값, 배포 시 prod로 교체
 
 jwt:
-  secret: ${JWT_SECRET}
-  secret: "your-secret-key-must-be-at-least-32-characters-long!!" # 32자 이상
+  secret: ${JWT_SECRET:your-secret-key-must-be-at-least-32-characters-long!!}
   expiration: 86400000          # 24시간 (ms)
 
-
-
+oauth:
+  kakao:
+    user-info-url: https://kapi.kakao.com/v2/user/me
+  google:
+    user-info-url: https://www.googleapis.com/oauth2/v3/userinfo

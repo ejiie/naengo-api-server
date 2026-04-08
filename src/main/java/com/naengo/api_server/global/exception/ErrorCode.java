@@ -12,6 +12,8 @@ public enum ErrorCode {
     FORBIDDEN(HttpStatus.FORBIDDEN, "접근 권한이 없습니다."),
     INVALID_TOKEN(HttpStatus.UNAUTHORIZED, "유효하지 않은 토큰입니다."),
     EXPIRED_TOKEN(HttpStatus.UNAUTHORIZED, "만료된 토큰입니다."),
+    SOCIAL_AUTH_FAILED(HttpStatus.UNAUTHORIZED, "소셜 로그인 인증에 실패했습니다."),
+    EMAIL_PROVIDER_CONFLICT(HttpStatus.CONFLICT, "해당 이메일로 이미 가입된 계정이 있습니다. 기존 로그인 방식을 이용해주세요."),
 
     // ─── User ────────────────────────────────────────────
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 사용자입니다."),
