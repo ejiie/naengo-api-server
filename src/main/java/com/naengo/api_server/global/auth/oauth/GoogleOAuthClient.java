@@ -18,11 +18,7 @@ public class GoogleOAuthClient {
 
     private static final String USER_INFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo";
 
-    private final RestClient restClient;
-
-    public GoogleOAuthClient(RestClient.Builder builder) {
-        this.restClient = builder.build();
-    }
+    private final RestClient restClient = RestClient.create();
 
     /**
      * 구글 액세스 토큰으로 사용자 정보 조회.

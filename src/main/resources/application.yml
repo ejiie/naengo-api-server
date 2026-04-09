@@ -1,4 +1,8 @@
 spring:
+  autoconfigure:
+    # EmbeddingModel 미설정 시 PgVectorStore 자동구성 비활성화 (AI 기능 추가 시 해제)
+    exclude: org.springframework.ai.vectorstore.pgvector.autoconfigure.PgVectorStoreAutoConfiguration
+
   datasource:
     url: jdbc:postgresql://localhost:5432/naengo
     username: ${DB_USERNAME}

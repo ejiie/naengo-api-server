@@ -19,11 +19,7 @@ public class KakaoOAuthClient {
 
     private static final String USER_INFO_URL = "https://kapi.kakao.com/v2/user/me";
 
-    private final RestClient restClient;
-
-    public KakaoOAuthClient(RestClient.Builder builder) {
-        this.restClient = builder.build();
-    }
+    private final RestClient restClient = RestClient.create();
 
     /**
      * 카카오 액세스 토큰으로 사용자 정보 조회.

@@ -1,9 +1,9 @@
 package com.naengo.api_server.domain.user.entity;
 
-import io.hypersistence.utils.hibernate.type.json.JsonBinaryType;
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.Type;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.ZonedDateTime;
 import java.util.Map;
@@ -45,7 +45,8 @@ public class User {
     @Builder.Default
     private boolean isBlocked = false;
 
-    @Type(JsonBinaryType.class)
+    // Hibernate 7 네이티브 JSON 지원 (hypersistence-utils 불필요)
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private Map<String, Object> preferences;
 
