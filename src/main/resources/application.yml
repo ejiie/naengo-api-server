@@ -27,5 +27,11 @@ jwt:
 oauth:
   kakao:
     user-info-url: https://kapi.kakao.com/v2/user/me
+    # 개발 테스트용 — 운영 배포 시 환경변수로 주입
+    rest-api-key: ${KAKAO_REST_API_KEY:}
+    token-url: https://kauth.kakao.com/oauth/token
+    auth-url: https://kauth.kakao.com/oauth/authorize
+    # 카카오 개발자 콘솔에 등록한 Redirect URI 와 동일해야 함
+    redirect-uri: ${KAKAO_REDIRECT_URI:http://localhost:8080/oauth/kakao/test-callback}
   google:
     user-info-url: https://www.googleapis.com/oauth2/v3/userinfo

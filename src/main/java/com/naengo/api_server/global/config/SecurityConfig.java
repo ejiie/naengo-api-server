@@ -32,9 +32,10 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
 
                         // ── 인증 없이 접근 가능 ──────────────────────────
-                        .requestMatchers("/api/auth/**").permitAll() // 회원가입, 로그인
+                        .requestMatchers("/api/auth/**").permitAll()                   // 회원가입, 로그인
                         .requestMatchers(HttpMethod.GET, "/api/recipes/**").permitAll() // 레시피 조회
-                        .requestMatchers(HttpMethod.POST, "/api/chat/**").permitAll() // 비로그인 채팅
+                        .requestMatchers(HttpMethod.POST, "/api/chat/**").permitAll()  // 비로그인 채팅
+                        .requestMatchers("/oauth/**").permitAll()                       // 개발용 OAuth 콜백
 
                         // ── 관리자 전용 ───────────────────────────────────
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
