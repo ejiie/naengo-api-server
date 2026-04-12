@@ -40,6 +40,9 @@ dependencies {
     // pgvector (기존 유지 — spring-ai BOM이 버전 관리)
     implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
 
+    // JSONB 컬럼 매핑: Hibernate 7은 네이티브 JSON 지원 → @JdbcTypeCode(SqlTypes.JSON) 사용
+    // hypersistence-utils-hibernate-63은 Hibernate 6.3용으로 Hibernate 7과 호환 불가 → 제거
+
     // Validation
     implementation 'org.springframework.boot:spring-boot-starter-validation'
 

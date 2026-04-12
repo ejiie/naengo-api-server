@@ -61,6 +61,11 @@ public class AuthService {
             throw new CustomException(ErrorCode.USER_BLOCKED);
         }
 
+        // 소셜 로그인 전용 계정은 비밀번호 없음 → 일반 로그인 불가
+        if (user.getPasswordHash() == null) {
+            throw new CustomException(ErrorCode.INVALID_CREDENTIALS);
+        }
+
         // 비밀번호 검증
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             throw new CustomException(ErrorCode.INVALID_CREDENTIALS); // 이메일/비번 구분 안 함 (보안)

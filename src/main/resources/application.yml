@@ -1,4 +1,8 @@
 spring:
+  autoconfigure:
+    # EmbeddingModel 미설정 시 PgVectorStore 자동구성 비활성화 (AI 기능 추가 시 해제)
+    exclude: org.springframework.ai.vectorstore.pgvector.autoconfigure.PgVectorStoreAutoConfiguration
+
   datasource:
     url: jdbc:postgresql://localhost:5432/naengo
     username: ${DB_USERNAME}
@@ -17,9 +21,17 @@ spring:
     active: local   # 기본값, 배포 시 prod로 교체
 
 jwt:
-  secret: ${JWT_SECRET}
-  secret: "your-secret-key-must-be-at-least-32-characters-long!!" # 32자 이상
+  secret: ${JWT_SECRET:your-secret-key-must-be-at-least-32-characters-long!!}
   expiration: 86400000          # 24시간 (ms)
 
-
-
+oauth:
+  kakao:
+    user-info-url: https://kapi.kakao.com/v2/user/me
+    # 개발 테스트용 — 운영 배포 시 환경변수로 주입
+    rest-api-key: ${KAKAO_REST_API_KEY:}
+    token-url: https://kauth.kakao.com/oauth/token
+    auth-url: https://kauth.kakao.com/oauth/authorize
+    # 카카오 개발자 콘솔에 등록한 Redirect URI 와 동일해야 함
+    redirect-uri: ${KAKAO_REDIRECT_URI:http://localhost:8080/oauth/kakao/test-callback}
+  google:
+    user-info-url: https://www.googleapis.com/oauth2/v3/userinfo
