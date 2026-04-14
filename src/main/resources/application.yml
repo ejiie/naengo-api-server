@@ -4,13 +4,13 @@ spring:
     exclude: org.springframework.ai.vectorstore.pgvector.autoconfigure.PgVectorStoreAutoConfiguration
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/naengo
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
+    url: jdbc:postgresql://localhost:5434/naengo
+    username: test
+    password: pwpw
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
-      ddl-auto: validate        # 스키마는 직접 관리, 자동 변경 금지
+      ddl-auto: update        # 스키마는 직접 관리, 자동 변경 금지
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
@@ -28,7 +28,7 @@ oauth:
   kakao:
     user-info-url: https://kapi.kakao.com/v2/user/me
     # 개발 테스트용 — 운영 배포 시 환경변수로 주입
-    rest-api-key: ${KAKAO_REST_API_KEY:}
+    rest-api-key: f85b8c13c6eebdefad3b6e933ca54071
     token-url: https://kauth.kakao.com/oauth/token
     auth-url: https://kauth.kakao.com/oauth/authorize
     # 카카오 개발자 콘솔에 등록한 Redirect URI 와 동일해야 함
