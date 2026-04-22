@@ -1,16 +1,4 @@
 CREATE TABLE Users (
-    user_id SERIAL PRIMARY KEY, -- 자동으로 숫자 올라가는 고유 ID
-    email VARCHAR(255) UNIQUE NOT NULL, -- 이메일 중복 불가, 필수 입력 (@, . 포함 여부는 백엔드 정규식으로 해결)
-    password_hash VARCHAR(255) NOT NULL, -- 암호화된 비밀번호
-    nickname VARCHAR(50) UNIQUE NOT NULL, -- 닉네임 중복 불가! 필수 입력
-    role VARCHAR(20) DEFAULT 'USER' CHECK (role IN ('USER', 'ADMIN')), -- 권한 (기본값은 일반 유저)
-    is_blocked BOOLEAN DEFAULT false, -- 악성 유저 차단 여부
-    preferences JSONB, -- 선호도, 알레르기 등 AI 프롬프트에 넣을 데이터 (유연하게 JSON 형태)
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP -- 가입 시간
-);
-
-
-CREATE TABLE Users (
     user_id      BIGSERIAL PRIMARY KEY,
     email        VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
