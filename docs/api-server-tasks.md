@@ -47,37 +47,69 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 
 ## 2. 내가(=API 서버 담당자) 해야 할 일 — 단계별
 
-### Phase 0. 사전 결정 (코드 짜기 전 합의 필요)
+### Phase 0. 사전 결정 (2026-04-22 확정)
 
 다른 파트(AI 서버, 프론트)와 같이 결정해야 결과적으로 재작업이 줄어드는 항목.
 
-- [ ] **AI 서버 ↔ API 서버 인증 방식**
-  - 옵션 A: 같은 JWT secret 공유 → 사용자 토큰을 그대로 AI 서버가 검증
-  - 옵션 B: API 서버가 "내부 전용 토큰"을 별도 발급 → AI 서버가 검증
-  - 옵션 C: mTLS / API Key (간단하지만 사용자 식별을 별도 헤더로)
-  - **권장 출발선**: 옵션 A (단일 secret 공유) — 다만 secret 회전 정책을 같이 정해야 함
-- [ ] **Chat_Rooms / Session_Logs 의 쓰기 권한자**
-  - AI 서버가 직접 쓰는가 (DB 공유) vs API 서버 엔드포인트로 위임하는가
-  - **권장 출발선**: AI 서버가 직접 쓰되, API 서버는 "조회 전용" 엔드포인트만 제공 (사용자 → 본인 채팅 목록 보기)
-  - 이때 두 서버가 같은 DB에 붙는다면 마이그레이션 책임자도 합의해야 함 → **권장: 마이그레이션은 API 서버가 단독 관리**
-- [ ] **레시피 임베딩(VECTOR(3072)) 생성 시점**
-  - 사용자가 레시피 작성 → 관리자 승인 → **승인 시점에 AI 서버에 "임베딩 생성 요청"** 보내고 그 결과를 API 서버가 `recipes.embedding` 에 UPDATE
-  - 또는: 작성 시점에 즉시 임베딩 (반려되면 낭비)
-  - **권장 출발선**: 승인 시점
-- [ ] **이미지 업로드 위치**
-  - 레시피 사진, 재료 분석용 사진을 어디 저장할지 (S3 / 로컬 / 외부 CDN)
-  - API 서버가 presigned URL 발급할지, 직접 multipart 받을지
-- [ ] **마이그레이션 도구**
-  - Flyway vs Liquibase vs 수동 SQL → **권장: Flyway** (`V2__...sql` 파일 이미 있음)
-- [ ] **DB 단일/분리**
-  - AI 서버와 같은 PostgreSQL을 공유하는가, 별도 DB인가
-  - 같은 DB라면 pgvector 컬럼은 누가 쓰고 누가 읽는지 정의
+- [x] **AI 서버 ↔ API 서버 인증 방식** — 옵션 A (JWT secret 공유) 채택
+  - 플로우:
+    1. (자체) 프론트가 `/api/auth/login` 호출 → API 서버가 자체 JWT 발급
+    2. (소셜) 프론트가 카카오/구글 SDK 로 access token 획득 → API 서버 `/api/auth/social/*` 로 전달 → API 서버가 검증 후 **동일한 형식의 자체 JWT 발급**
+    3. 프론트는 로그인 방식과 무관하게 `Authorization: Bearer <API서버 JWT>` 하나만 사용
+    4. AI 서버는 같은 secret 으로 JWT 검증 → `sub(=user_id)` 만 꺼내 사용. 사용자 정보가 더 필요하면 API 서버 조회 엔드포인트 호출.
+  - **소셜 로그인이든 자체 로그인이든 AI 서버 입장에서는 동일한 JWT** 이므로 AI 서버는 로그인 방식을 알 필요가 없다(단일 검증 경로).
+  - secret 은 환경변수로 양 서버가 공유. **회전 시 양 서버 동시 배포 또는 kid(key id) 기반 멀티 키 지원** 을 미리 설계해둘 것.
+  - 서비스-투-서비스 호출(사용자 컨텍스트 없이 API 서버 → AI 서버 트리거, 예: 관리자 승인 후 임베딩 요청)은 사용자 JWT 가 없으므로 **별도 내부 토큰 또는 API Key** 헤더로 처리 → 이건 Phase 3 에서 구현 시점에 다시 정한다 (지금은 "존재한다"만 명시).
+- [x] **Chat_Rooms / Session_Logs 의 쓰기 권한자** — AI 서버가 primary writer, API 서버는 read-only
+  - AI 서버: INSERT / UPDATE (채팅 세션 생성, 메시지 누적, 추천 결과 기록, status 전이)
+  - API 서버: SELECT 만. 제공 엔드포인트 — 내 채팅방 목록 / 특정 세션 조회 / 채팅방 숨김(`is_active=false`) 토글 정도
+  - **DDL(테이블 생성·컬럼 추가·인덱스)은 API 서버가 Flyway 로 단독 관리** — AI 서버는 읽기/쓰기만, 스키마 변경은 하지 않음
+  - AI 서버 팀과 **컬럼 시멘틱 변경이 필요할 때** 는 Flyway 마이그레이션 전 합의 필요 (공유 자원이므로)
+- [x] **레시피 임베딩** — `VECTOR(1536)`, 관리자 승인 시점에 생성
+  - 스키마: `recipes.embedding VECTOR(1536)` (OpenAI `text-embedding-3-small` 기준 또는 동급)
+  - 플로우:
+    1. 사용자 레시피 작성 → `status = 'PENDING'`, `embedding = NULL`
+    2. 관리자 승인 API 호출 → API 서버 트랜잭션에서 `status = 'APPROVED'` 변경
+    3. 트랜잭션 **커밋 후** AI 서버 `/internal/embed` 호출 (내부 토큰 사용) → vector 반환
+    4. API 서버가 `UPDATE recipes SET embedding = ? WHERE recipe_id = ?`
+  - 3번 실패 시 승인 자체는 유지 (사용자 체감 우선). 실패 건은 재시도 큐 or cron 으로 `embedding IS NULL AND status = 'APPROVED'` 조회 후 재생성.
+  - **대안 논의**: AI 서버가 DB 에 직접 UPDATE 하는 것도 가능하지만, `recipes` 테이블 쓰기 권한자를 API 서버로 한정하기 위해 이 방식을 택함(책임 경계 명확화).
+- [x] **이미지 업로드 — AWS S3 + presigned URL 방식**
+  - 전제: 인프라를 AWS 로 올릴 예정 → S3 기본 사용. API 서버 인스턴스가 대용량 바이너리를 중계하는 구조는 처음부터 피한다.
+  - 플로우 (레시피 사진):
+    1. 프론트가 API 서버 `POST /api/uploads/presigned-url?type=recipe` 호출 → API 서버가 S3 presigned PUT URL + 최종 접근 URL 생성해 반환
+    2. 프론트가 S3 에 직접 PUT 업로드
+    3. 프론트가 레시피 생성 API 호출 시 최종 S3 URL 을 `image_url` 로 전달
+    4. API 서버는 URL 프리픽스가 우리 버킷인지 검증만 하고 저장
+  - 플로우 (재료 분석 사진):
+    - 1안: 프론트 → AI 서버에 직접 업로드 (AI 서버가 분석 후 즉시 버림) → 이 흐름은 **AI 서버 책임이라 API 서버는 관여 안 함**
+    - 2안: S3 임시 버킷 경유 (lifecycle rule 로 N시간 후 자동 삭제) → AI 서버가 키만 받아 분석
+    - 선택은 AI 서버 팀이 결정하되, API 서버는 **재료 분석 이미지 저장을 하지 않는다** 는 것만 확정
+  - S3 관련 설정(bucket, region, IAM role, CORS): `application.yml` 에 환경변수로 외부화. 로컬 개발에서는 LocalStack 또는 실 버킷(개발용) 사용.
+  - 제한: MIME 화이트리스트(jpeg/png/webp), 최대 크기(예: 5MB), presigned URL 유효 시간(5분).
+- [x] **마이그레이션 도구** — Flyway 확정
+  - 이미 `V2__add_social_login_fields.sql` 이 존재 → Flyway 네이밍을 그대로 따라감
+  - Phase 1 에서 `V1__init.sql` 을 작성(현재 운영 스키마 포함)하고 `mainFields.sql` 은 개발 레퍼런스로만 유지
+- [x] **DB 공유** — AWS RDS PostgreSQL (pgvector 확장) 공유 DB
+  - 같은 DB, 같은 스키마. AI 서버와 API 서버가 같은 데이터베이스에 접속.
+  - 테이블별 책임:
+    | 테이블 | Write | Read | DDL |
+    |---|---|---|---|
+    | `users` | API | API, AI | API |
+    | `recipes` (embedding 컬럼 제외) | API | API, AI | API |
+    | `recipes.embedding` | **AI** | AI (RAG 검색) | API |
+    | `recipe_stats`, `scraps`, `likes` | API | API | API |
+    | `chat_rooms`, `session_logs` | **AI** | API, AI | API |
+    | `fridge` | API | API, AI | API |
+  - MVP 에서는 양 서버가 **같은 DB role** 공유. 운영 안정화 후 별도 role 로 권한 최소화 검토(예: AI 서버 role 은 `users` UPDATE 불가).
 
 ### Phase 1. 기반 정리
 
-- [ ] `mainFields.sql` 의 **Users 테이블 중복 정의** 제거 (13~25행이 정본, 1~10행 삭제)
-- [ ] Flyway 도입 → `V1__init.sql` 작성 (현재 운영 중 스키마 그대로) + 기존 `V2__add_social_login_fields.sql` 와 정합성 확인
+- [x] `mainFields.sql` 의 **Users 테이블 중복 정의 제거 + `embedding VECTOR(3072) → VECTOR(1536)`**
+- [ ] Flyway 의존성 추가(`build.gradle`) + 설정(`spring.flyway.*`)
+- [ ] `V1__init.sql` 작성 — 현재 운영 스키마(정리 후 `mainFields.sql`) 기준. 기존 `V2__add_social_login_fields.sql` 와의 순서/중복 정합성 확인 (V1 에 provider 컬럼이 이미 들어있으면 V2 는 소셜 로그인 이전 구버전 DB 용이 됨 — 필요 시 분리/재작성)
 - [ ] `application.yml` / `application.properties` 중복 정리 (둘 다 있음)
+- [ ] 프로파일 분리 (`application-local.yml`, `application-prod.yml`) — AWS 배포 대비
 - [ ] `ApiServerApplication.java` 구동 확인 + 헬스체크 엔드포인트 (`GET /health`)
 
 ### Phase 2. 도메인 구현 (의존성 순서)
@@ -85,7 +117,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 순서대로 가는 게 안전. 위→아래로 의존.
 
 1. [ ] **Recipe** (entity / repo / service / controller)
-   - 등록(작성) → 상태 PENDING
+   - 등록(작성) → 상태 PENDING, `embedding = NULL`, `image_url` 은 S3 URL 문자열만 저장 (Phase 0-4)
    - 단건 조회 (APPROVED 만 일반 사용자에게)
    - 목록 조회 (페이징 + 정렬: 최신순 / 인기순)
    - 본인 작성 레시피 목록 (PENDING 포함)
@@ -114,7 +146,15 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
    - 관리자 로그인 (User.role=ADMIN 으로 분기, 별도 로그인 화면은 프론트 책임)
    - 레시피 승인/반려 (PENDING → APPROVED/REJECTED)
    - 사용자 차단/차단 해제 (`User.block()` / `unblock()` 이미 있음)
-   - 레시피 승인 시 → **AI 서버에 임베딩 생성 요청** → 반환된 vector 를 UPDATE
+   - 레시피 승인 시 흐름 (Phase 0-3 확정):
+     1. 트랜잭션: `status = 'APPROVED'` UPDATE 후 커밋
+     2. 커밋 이후 AI 서버 `/internal/embed` 호출 → vector(1536) 반환
+     3. `UPDATE recipes SET embedding = ? WHERE recipe_id = ?`
+     4. 실패 시 승인은 유지, 재시도 큐 또는 스케줄러가 `status='APPROVED' AND embedding IS NULL` 를 주기 재처리
+9. [ ] **Upload (S3 presigned URL)**
+   - `POST /api/uploads/presigned-url` → type(recipe/...) 을 받아 presigned PUT URL + 최종 접근 URL 반환
+   - MIME 화이트리스트(jpeg/png/webp), 최대 크기, 유효 시간(5분)
+   - 인증 필수 (USER)
 
 ### Phase 3. AI 서버 연동 모듈
 
@@ -122,11 +162,13 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 - [ ] AI 서버 베이스 URL, 타임아웃, 재시도 설정 → `application.yml`
 - [ ] WebClient 또는 RestClient (Spring Boot 3.2+) 채택
 - [ ] 호출별 클라이언트:
-  - `EmbeddingClient.requestEmbedding(recipeId, fullContent)` → vector
-  - `RagClient.recommend(userId, fridge, preferences, feedback)` → 추천 레시피 ID 리스트 (실제 RAG 자체는 AI가 함)
-  - `IngredientVisionClient.analyzeImage(imageBytes)` → 재료 리스트 (또는 프론트 → AI 서버 직통)
-- [ ] 호출 시 사용자 JWT 또는 내부 토큰 헤더 부착 (Phase 0 결정 사항)
-- [ ] 실패 시 fallback / 사용자에게 보일 에러코드 정의 (`ErrorCode`에 `AI_SERVER_UNAVAILABLE` 등 추가)
+  - `EmbeddingClient.requestEmbedding(recipeId, fullContent)` → `float[1536]` — **내부 토큰** 사용 (사용자 컨텍스트 없음, 관리자 승인 트리거)
+  - `RagClient.recommend(userId, fridge, preferences, feedback)` — *필요 시*. 현재 설계상 프론트가 AI 서버로 직접 호출하고 결과만 세션 로그로 AI 서버가 DB 에 기록하므로 API 서버 경유 불필요할 수 있음 → AI 서버 팀과 최종 합의
+  - 재료 이미지 분석은 **API 서버 경유하지 않음** (Phase 0-4 확정)
+- [ ] 헤더 전략:
+  - 사용자 요청 대리 호출: `Authorization: Bearer <user JWT 그대로 전달>`
+  - 서비스-투-서비스 트리거(임베딩 요청 등): `X-Internal-Token: <공유 내부 토큰>` 혹은 서비스 전용 JWT (Phase 3 구현 시점에 최종 결정)
+- [ ] 실패 시 fallback / 사용자에게 보일 에러코드 정의 (`ErrorCode`에 `AI_SERVER_UNAVAILABLE`, `EMBEDDING_FAILED` 등 추가)
 
 ### Phase 4. 운영 준비
 
@@ -165,7 +207,12 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 
 ## 5. 의사결정 보류 항목 (TODO: 팀 논의)
 
-- [ ] 위 Phase 0 항목 전부
+- [x] ~~위 Phase 0 항목 전부~~ — 2026-04-22 확정
+- [ ] **서비스-투-서비스 인증 구체안** (Phase 0-1 에서 "존재한다"까지만 결정. 내부 토큰 포맷·회전 주기는 Phase 3 구현 시 확정)
+- [ ] **JWT secret 회전 정책** (kid 지원 여부 / 동시 배포 방식)
+- [ ] **재료 분석 이미지 흐름 최종안** (프론트 → AI 직통 vs S3 임시 경유) — AI 서버 팀 결정 대기
 - [ ] 통계(인기 레시피 / 스크랩 수 / 검색 실패율) 집계 — API 서버에서 할지, 별도 분석 파이프라인을 둘지
 - [ ] 회원 탈퇴 시 작성 레시피·스크랩 처리 (하드 삭제 vs 익명화) — 현재 스키마는 `ON DELETE SET NULL` / `CASCADE` 로 갈려 있음
 - [ ] 레시피 수정 불가 정책 — 정말 영구 불가인지, 작성자가 5분 이내 수정 가능 등 완화 여지가 있는지
+- [ ] 임베딩 재시도 메커니즘 (DB 폴링 vs 메시지 큐 SQS)
+- [ ] AWS 운영 세부: RDS 인스턴스 타입, S3 버킷 분리(prod/dev), CloudFront 사용 여부
