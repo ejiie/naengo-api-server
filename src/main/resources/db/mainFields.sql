@@ -25,7 +25,7 @@ CREATE TABLE Recipes (
     author_id INTEGER REFERENCES Users(user_id) ON DELETE SET NULL,
     status VARCHAR(20) DEFAULT 'PENDING' CHECK (status IN ('APPROVED', 'PENDING', 'REJECTED')),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    embedding VECTOR(3072), 
+    embedding VECTOR(1536), 
     ingredients JSONB 
 );
 
