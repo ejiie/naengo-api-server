@@ -34,3 +34,15 @@ oauth:
     auth-url: https://kauth.kakao.com/oauth/authorize
   google:
     user-info-url: https://www.googleapis.com/oauth2/v3/userinfo
+
+# AWS S3 (이미지 업로드). 버킷/프리픽스가 비어있으면 업로드 엔드포인트는 503 반환.
+# 레시피 생성 API 의 `imageUrl` 프리픽스 검증도 이 값이 비어있으면 스킵 (로컬 개발용).
+# 실 구현은 SPEC-20260422-05 참조 - 팀원이 AWS 에 버킷 생성한 이후 진행.
+aws:
+  region: ${AWS_REGION:ap-northeast-2}
+  s3:
+    bucket: ${AWS_S3_BUCKET:}
+    public-url-prefix: ${AWS_S3_PUBLIC_URL_PREFIX:}
+    presigned-url-ttl-seconds: 300
+    max-content-length: 5242880
+    allowed-content-types: image/jpeg,image/png,image/webp

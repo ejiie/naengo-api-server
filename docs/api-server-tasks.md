@@ -36,15 +36,16 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 | OAuth | `global/auth/oauth/{Kakao,Google}OAuthClient.java`, `KakaoTokenClient.java`, `OAuthUserInfo.java`, `DevOAuthController.java` | OK |
 | User 도메인 | `domain/user/{entity,dto,repository,service,controller}/*` | OK (signup / login / social). 탈퇴·마이페이지는 Step 4 |
 | 헬스체크 | `global/controller/HealthController.java` | OK (`GET /health`) |
-| 설정 파일 | `application.yml` / `application-{local,prod}.yml` | OK (프로파일 분리, secret env 외부화) |
+| 설정 파일 | `application.yml` / `application-{local,prod}.yml` | OK (프로파일 분리, secret env 외부화, `aws.s3.*` 키 준비) |
 | 마이그레이션 | `db/migration/V1__init.sql`, `V2__add_social_login_fields.sql`, `V3__add_user_deleted_at.sql` | OK (진실원본). JPA `ddl-auto: validate` |
 | 빌드 도구 | `build.gradle` | Flyway(core + pg) 추가됨 |
+| Recipe 도메인 | `domain/recipe/{entity,repository,service,controller,dto}/*` | OK (create/read/delete + stats 동기화). 임베딩·승인 흐름은 Step 6/7 |
+| 보조 유틸 | `global/auth/SecurityUtil`, `domain/user/support/AuthorDisplayName` | OK |
+| 명세서 | `docs/spec/recipe-{create,read,delete}.md`, `docs/spec/upload-presigned-url.md` | OK |
 
 ### 아직 없는 것 (= 만들어야 할 것)
 
-- **Recipe 도메인** (Step 2)
-- **Recipe_Stats** (Step 2, Recipe 와 함께)
-- **Upload (S3 presigned URL)** (Step 2 명세만, 구현은 AWS S3 준비 후)
+- **Upload (S3 presigned URL) 실제 구현** (명세 있음. 코드는 AWS S3 준비 후 — Step 2-4b)
 - **Like / Scrap** (Step 3)
 - **User 마이페이지 / 탈퇴 익명화** (Step 4)
 - **Fridge / Chat (read-only)** (Step 5)
@@ -270,17 +271,29 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 
 ---
 
-### Step 2. Recipe 도메인 + S3 업로드
+### Step 2. Recipe 도메인 + S3 업로드 — **부분 완료 (2026-04-22)**
 의존: Step 1 완료.
 
-- [ ] 2-1. 명세서 `docs/spec/recipe-create.md` 작성 → 코드 생성 → Entity / Repository / Service / Controller
-- [ ] 2-2. 명세서 `docs/spec/recipe-read.md` 작성 (단건·목록, 페이징·정렬)
-- [ ] 2-3. 명세서 `docs/spec/recipe-delete.md` 작성 (본인 작성분 삭제만)
-- [ ] 2-4. 명세서 `docs/spec/upload-presigned-url.md` 작성 → S3 presigned PUT URL 발급 엔드포인트 + AWS SDK 설정
-- [ ] 2-5. Recipe 작성 시 `recipe_stats` 같은 트랜잭션 INSERT 로직 포함
-- [ ] 2-6. 응답 DTO 에서 작성자 닉네임 치환(탈퇴 사용자 → "탈퇴한 사용자") 공통 로직
+- [x] 2-1. `docs/spec/recipe-create.md` (SPEC-20260422-02) 작성 + Recipe 작성 엔드포인트 구현
+- [x] 2-2. `docs/spec/recipe-read.md` (SPEC-20260422-03) 작성 + 목록/단건/내 레시피 조회 구현
+- [x] 2-3. `docs/spec/recipe-delete.md` (SPEC-20260422-04) 작성 + 본인 삭제 구현 (session_logs 참조 선행 NULL 처리 포함)
+- [x] 2-4a. `docs/spec/upload-presigned-url.md` (SPEC-20260422-05) 작성
+- [ ] 2-4b. **Upload 엔드포인트 실제 구현 — AWS S3 버킷 생성 후로 이연** (§0 인프라 메모)
+- [x] 2-5. Recipe 작성 트랜잭션에서 `recipe_stats` INSERT (`RecipeService.create`)
+- [x] 2-6. 작성자 닉네임 치환: `AuthorDisplayName` 공통 유틸 (`"탈퇴한 사용자_<id>"` → `"탈퇴한 사용자"`)
 
-**산출물**: 명세서 4건, `domain/recipe/*`, `domain/upload/*`, `application.yml` 에 AWS 설정
+**구현 산출물**:
+- `domain/recipe/entity/*` — Recipe, RecipeStats, RecipeSource, RecipeStatus, Ingredient
+- `domain/recipe/repository/*` — RecipeRepository(JPQL 페치조인), RecipeStatsRepository
+- `domain/recipe/dto/*` — Create/List/Detail DTO
+- `domain/recipe/service/RecipeService`
+- `domain/recipe/controller/RecipeController`
+- `domain/user/support/AuthorDisplayName`
+- `global/auth/SecurityUtil` — currentUserIdOrNull / hasRole
+- `global/config/SecurityConfig` — `/api/recipes/my` 를 permitAll 규칙보다 먼저 `authenticated()` 로 보강
+- `application.yml` — `aws.s3.*` 설정 키 (버킷 미설정 시 프리픽스 검증 스킵)
+
+**검증**: `./gradlew build -x test` 통과. 실 DB 기동 테스트는 팀원의 AWS RDS 준비 후.
 
 ---
 
