@@ -243,17 +243,18 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 모든 Phase 0 결정이 끝난 현재, 다음 순서대로 진행한다. **각 스텝은 "명세서 작성 → LLM 코드 생성 → 검토·수정 → 커밋"** 루틴을 그대로 따른다 (§4).
 의존성이 있는 스텝은 앞 스텝 완료 전에는 착수하지 않는다.
 
-### Step 1. 인프라 기반 정리 (선행, 다른 모든 스텝의 전제)
-- [ ] 1-1. `build.gradle` 에 Flyway 의존성 추가 (`org.flywaydb:flyway-core`, PostgreSQL 용 플러그인)
-- [ ] 1-2. `application.yml` / `application.properties` 중복 제거 → `application.yml` 로 단일화
-- [ ] 1-3. 프로파일 분리: `application-local.yml`, `application-prod.yml` (secret 외부화 준비)
-- [ ] 1-4. `V1__init.sql` 작성 — 현재 스키마(정리된 `mainFields.sql`) 기준. `embedding VECTOR(1536)` 반영
-- [ ] 1-5. 기존 `V2__add_social_login_fields.sql` 와 V1 의 관계 정리 (중복이면 V2 삭제 or V2 를 no-op 처리)
-- [ ] 1-6. `V3__add_deleted_at.sql` 작성 — `ALTER TABLE users ADD COLUMN deleted_at TIMESTAMPTZ NULL;`
-- [ ] 1-7. `GET /health` 엔드포인트 (비인증) 추가
-- [ ] 1-8. 로컬에서 `./gradlew bootRun` 으로 기동 확인 + Flyway 마이그레이션 적용 확인
+### Step 1. 인프라 기반 정리 (선행, 다른 모든 스텝의 전제) — **완료**
+- [x] 1-1. `build.gradle` 에 Flyway 의존성 추가 (`flyway-core`, `flyway-database-postgresql`)
+- [x] 1-2. `application.properties` 제거 → `application.yml` 로 단일화
+- [x] 1-3. 프로파일 분리: `application-local.yml`(기본), `application-prod.yml`(env 주입)
+- [x] 1-4. `src/main/resources/db/migration/V1__init.sql` 작성 — 소셜 로그인 **이전** 스키마 (BIGINT 통일, 인덱스 포함, `embedding VECTOR(1536)`)
+- [x] 1-5. 기존 V2 는 `db/migration/` 으로 이동하여 V1 → V2 체인 유지 (V2 는 그대로 소셜 로그인 필드 추가)
+- [x] 1-6. `V3__add_user_deleted_at.sql` 작성
+- [x] 1-7. `GET /health` 엔드포인트 추가 + SecurityConfig 에서 `permitAll`
+- [x] 1-8. `./gradlew build` 통과 (테스트 제외 — 통합 테스트 DB 연동은 Step 8)
+- [ ] *(보류)* 실 Postgres 인스턴스 대상 `./gradlew bootRun` 기동은 로컬 DB 준비 시 수동 확인 필요. JPA 는 `ddl-auto: validate` 로 전환되어 스키마 드리프트 발생 시 조기 실패한다.
 
-**산출물**: 위 파일들 + 동작 확인 로그
+**산출물**: `build.gradle`, `application{,-local,-prod}.yml`, `db/migration/V1~V3.sql`, `HealthController`, `SecurityConfig` 업데이트
 
 ---
 

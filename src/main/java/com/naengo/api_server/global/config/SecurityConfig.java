@@ -32,6 +32,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
 
                         // ── 인증 없이 접근 가능 ──────────────────────────
+                        .requestMatchers("/health").permitAll()                         // 헬스체크
                         .requestMatchers("/api/auth/**").permitAll()                   // 회원가입, 로그인
                         .requestMatchers(HttpMethod.GET, "/api/recipes/**").permitAll() // 레시피 조회
                         .requestMatchers(HttpMethod.POST, "/api/chat/**").permitAll()  // 비로그인 채팅
