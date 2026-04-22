@@ -235,3 +235,122 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 - [ ] 임베딩 재시도 메커니즘 (DB 폴링 vs 메시지 큐 SQS)
 - [ ] AWS 운영 세부: RDS 인스턴스 타입, S3 버킷 분리(prod/dev), CloudFront 사용 여부
 - [ ] **탈퇴 시 AI 서버 데이터 파기 정책** (위 익명화 결정에서 파생됨)
+
+---
+
+## 6. 작업 순서 (즉시 착수 가능한 순)
+
+모든 Phase 0 결정이 끝난 현재, 다음 순서대로 진행한다. **각 스텝은 "명세서 작성 → LLM 코드 생성 → 검토·수정 → 커밋"** 루틴을 그대로 따른다 (§4).
+의존성이 있는 스텝은 앞 스텝 완료 전에는 착수하지 않는다.
+
+### Step 1. 인프라 기반 정리 (선행, 다른 모든 스텝의 전제)
+- [ ] 1-1. `build.gradle` 에 Flyway 의존성 추가 (`org.flywaydb:flyway-core`, PostgreSQL 용 플러그인)
+- [ ] 1-2. `application.yml` / `application.properties` 중복 제거 → `application.yml` 로 단일화
+- [ ] 1-3. 프로파일 분리: `application-local.yml`, `application-prod.yml` (secret 외부화 준비)
+- [ ] 1-4. `V1__init.sql` 작성 — 현재 스키마(정리된 `mainFields.sql`) 기준. `embedding VECTOR(1536)` 반영
+- [ ] 1-5. 기존 `V2__add_social_login_fields.sql` 와 V1 의 관계 정리 (중복이면 V2 삭제 or V2 를 no-op 처리)
+- [ ] 1-6. `V3__add_deleted_at.sql` 작성 — `ALTER TABLE users ADD COLUMN deleted_at TIMESTAMPTZ NULL;`
+- [ ] 1-7. `GET /health` 엔드포인트 (비인증) 추가
+- [ ] 1-8. 로컬에서 `./gradlew bootRun` 으로 기동 확인 + Flyway 마이그레이션 적용 확인
+
+**산출물**: 위 파일들 + 동작 확인 로그
+
+---
+
+### Step 2. Recipe 도메인 + S3 업로드
+의존: Step 1 완료.
+
+- [ ] 2-1. 명세서 `docs/spec/recipe-create.md` 작성 → 코드 생성 → Entity / Repository / Service / Controller
+- [ ] 2-2. 명세서 `docs/spec/recipe-read.md` 작성 (단건·목록, 페이징·정렬)
+- [ ] 2-3. 명세서 `docs/spec/recipe-delete.md` 작성 (본인 작성분 삭제만)
+- [ ] 2-4. 명세서 `docs/spec/upload-presigned-url.md` 작성 → S3 presigned PUT URL 발급 엔드포인트 + AWS SDK 설정
+- [ ] 2-5. Recipe 작성 시 `recipe_stats` 같은 트랜잭션 INSERT 로직 포함
+- [ ] 2-6. 응답 DTO 에서 작성자 닉네임 치환(탈퇴 사용자 → "탈퇴한 사용자") 공통 로직
+
+**산출물**: 명세서 4건, `domain/recipe/*`, `domain/upload/*`, `application.yml` 에 AWS 설정
+
+---
+
+### Step 3. Engagement (Like, Scrap)
+의존: Step 2 완료.
+
+- [ ] 3-1. 명세서 `docs/spec/like-toggle.md` 작성 → 구현 (`POST /api/recipes/{id}/like` 토글)
+- [ ] 3-2. 명세서 `docs/spec/scrap-toggle.md` + `docs/spec/scrap-list.md` 작성 → 구현
+- [ ] 3-3. Like/Scrap 트랜잭션 안에서 `recipe_stats.likes_count` / `scrap_count` 증감
+- [ ] 3-4. 동시성: `recipe_stats` UPDATE 에 낙관적 락 또는 `SELECT ... FOR UPDATE` 중 택 1
+
+**산출물**: 명세서 3건, `domain/like/*`, `domain/scrap/*`
+
+---
+
+### Step 4. User 마이페이지 + 회원 탈퇴(익명화)
+의존: Step 1 (deleted_at 마이그레이션) + Step 3 (스크랩/좋아요 삭제 대상).
+
+- [ ] 4-1. 명세서 `docs/spec/user-me-get.md`, `docs/spec/user-me-update.md` 작성 → 구현 (닉네임·선호도)
+- [ ] 4-2. 명세서 `docs/spec/user-password-change.md` 작성 → 구현 (LOCAL provider 한정)
+- [ ] 4-3. 명세서 `docs/spec/user-withdraw.md` 작성 → 구현 (`DELETE /api/users/me`, 익명화 트랜잭션)
+  - PII nullify + `nickname = '탈퇴한 사용자_<user_id>'` + `is_blocked = true` + `deleted_at = now()`
+  - `scraps` / `likes` 삭제 + `recipe_stats` 카운터 보정
+  - `chat_rooms` / `session_logs` 삭제는 AI 서버 합의 전까지 **보류**
+
+**산출물**: 명세서 4건, `domain/user/*` 확장
+
+---
+
+### Step 5. Fridge + Chat (read-only)
+의존: Step 4 완료 (사용자 컨텍스트 정비 후).
+
+- [ ] 5-1. 명세서 `docs/spec/fridge-crud.md` → 구현 (추가·조회·삭제)
+- [ ] 5-2. 명세서 `docs/spec/chat-room-list.md`, `docs/spec/chat-session-get.md` → 구현 (read-only)
+- [ ] 5-3. 채팅방 숨김 토글 (`is_active=false`) — 필요 여부 확인 후 결정
+
+**산출물**: 명세서 2~3건, `domain/fridge/*`, `domain/chat/*` (read-only)
+
+---
+
+### Step 6. Admin
+의존: Step 2 완료 (승인 대상 Recipe 존재).
+
+- [ ] 6-1. 명세서 `docs/spec/admin-recipe-approve.md` → 승인/반려 엔드포인트. 승인 시 AI 서버 임베딩 호출은 **Step 7 완료 후** 연동 (우선 DB 상태만 변경해도 OK — 임베딩은 NULL 인 채로 남음)
+- [ ] 6-2. 명세서 `docs/spec/admin-user-block.md` → 차단/해제
+- [ ] 6-3. 관리자 권한 가드 (`ADMIN` 역할 필수 어노테이션 또는 시큐리티 설정)
+
+**산출물**: 명세서 2건, `domain/admin/*`
+
+---
+
+### Step 7. AI 서버 연동 모듈
+의존: Step 6 (승인 흐름 존재해야 임베딩 호출 포인트가 있음). Step 2 와 병행 가능하나 보류.
+
+- [ ] 7-1. `global/client/ai/` 패키지 신설, WebClient(또는 RestClient) Bean 등록
+- [ ] 7-2. `application.yml` 에 AI 서버 base URL / 타임아웃 / 재시도 / 내부 토큰 주입
+- [ ] 7-3. `EmbeddingClient.requestEmbedding(recipeId, fullContent)` 구현 (`float[1536]` 반환)
+- [ ] 7-4. Admin 레시피 승인 트랜잭션 커밋 후 `EmbeddingClient` 호출 → `recipes.embedding` UPDATE (Step 6-1 과 연결)
+- [ ] 7-5. 실패 재시도 스케줄러 (`status='APPROVED' AND embedding IS NULL` 조회 → 재호출). MVP 는 단순 cron 으로 충분
+- [ ] 7-6. `ErrorCode` 에 `AI_SERVER_UNAVAILABLE`, `EMBEDDING_FAILED` 추가
+
+**산출물**: `global/client/ai/*`, 승인 흐름 완결, 재시도 잡
+
+---
+
+### Step 8. 운영 준비 (배포 직전)
+의존: Step 1~7 완료.
+
+- [ ] 8-1. CORS 설정 (프론트 도메인 화이트리스트)
+- [ ] 8-2. 운영 secret 외부화 (JWT secret, DB 접속정보, AWS 키, 내부 토큰)
+- [ ] 8-3. 로깅 정책 정리 (요청 ID, 사용자 ID 마스킹, PII 로그 금지)
+- [ ] 8-4. 통합 테스트: 로그인 → 레시피 작성 → 관리자 승인 → 임베딩 생성 → 스크랩 → 탈퇴, 이 end-to-end 1개
+- [ ] 8-5. AWS 배포 파일럿 (RDS + S3 + EC2/ECS 중 택일, 인프라 담당자와 합의)
+
+**산출물**: 운영 가능 상태의 서버 + 최소 1개의 통합 테스트
+
+---
+
+### 병렬 처리 가능한 잡일 (언제든 가능)
+스텝 의존성과 무관하게 시간 생기면 소화.
+
+- [ ] `ErrorCode` 선언만 있고 쓰이지 않는 Recipe/Chat 코드들 실제 사용처와 매핑
+- [ ] 예외 메시지 i18n 필요 여부 검토
+- [ ] README 에 로컬 개발 환경 구축 가이드 작성
+- [ ] `.gitignore` 점검 (application-local.yml, *.env 가 제외되는지)
+- [ ] pre-commit 훅 또는 Spotless 같은 포맷터 도입 검토
