@@ -1,0 +1,28 @@
+# 로컬 개발용 PostgreSQL + pgvector.
+# 사용: docker compose up -d
+# 중지: docker compose down
+# 데이터 리셋: docker compose down -v  (볼륨까지 삭제)
+#
+# 접속 정보는 application-local.yml 의 기본값과 일치.
+# (jdbc:postgresql://localhost:5432/naengo, 사용자/비번 naengo)
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: naengo-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: naengo
+      POSTGRES_PASSWORD: naengo
+      POSTGRES_DB: naengo
+    volumes:
+      - naengo_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U naengo -d naengo"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  naengo_postgres_data:
