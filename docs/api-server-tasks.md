@@ -42,6 +42,8 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 | Recipe 도메인 | `domain/recipe/{entity,repository,service,controller,dto}/*` | OK (create/read/delete + stats 동기화). 임베딩·승인 흐름은 Step 6/7 |
 | 보조 유틸 | `global/auth/SecurityUtil`, `domain/user/support/AuthorDisplayName` | OK |
 | 명세서 | `docs/spec/recipe-{create,read,delete}.md`, `docs/spec/upload-presigned-url.md` | OK |
+| 로컬 개발 환경 | `docker-compose.yml` (pgvector/pg16) | OK |
+| 온보딩 / 가이드 | `README.md`, `docs/db-testing-guide.md` | OK |
 
 ### 아직 없는 것 (= 만들어야 할 것)
 
@@ -222,6 +224,12 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 2. 명세서를 LLM(또는 본인)에게 전달 → 코드 생성
 3. 받은 코드 검토, 수정 사항이 생기면 `docs/changes/` 아래에 `change-log-template.md` 형식으로 변경 이력 기록
 4. 테스트 → 커밋 → 푸시
+5. **문서 최신화 (필수 루틴)**: 매 작업 후 아래 항목을 확인·갱신하고 같은 PR/커밋 또는 직후 커밋으로 반영한다.
+   - `api-server-tasks.md §1 인벤토리` — 새 파일·새 영역이 생기면 한 줄 추가
+   - `api-server-tasks.md §6 작업 순서` — 해당 Step/체크박스 상태 반영
+   - `api-server-tasks.md §5 보류 항목` — 새로 파생된 결정 보류 사항이 생기면 추가
+   - `README.md` — 새 환경변수·새 엔드포인트·새 전제 조건이 생기면 반영
+   - 명세를 벗어난 구현 디테일은 `docs/changes/` 에 기록
 
 이렇게 하면 "왜 이렇게 짰지?" 가 사라지고, 다음 사람(또는 미래의 본인)이 명세서만 봐도 의도를 복원할 수 있다.
 
@@ -375,8 +383,9 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 ### 병렬 처리 가능한 잡일 (언제든 가능)
 스텝 의존성과 무관하게 시간 생기면 소화.
 
-- [ ] `ErrorCode` 선언만 있고 쓰이지 않는 Recipe/Chat 코드들 실제 사용처와 매핑
+- [x] ~~README 에 로컬 개발 환경 구축 가이드 작성~~ — `README.md` + `docker-compose.yml` (pgvector/pg16) 커밋
+- [x] ~~`.gitignore` 점검~~ — 공백 구분 버그 수정, `.env*` / `*.log` / `.DS_Store` 추가. `application-{local,prod}.yml` 은 **버전 관리에 포함** (env 자리표시자만 보유, 실 secret 은 환경변수)
+- [x] ~~DB 관련 수동 검증 절차 문서화~~ — `docs/db-testing-guide.md` (Step 8 에서 JUnit 자동화 전까지 사용)
+- [ ] `ErrorCode` 선언만 있고 쓰이지 않는 Recipe/Chat 코드들 실제 사용처와 매핑 — Recipe 쪽은 Step 2 에서 부분 반영, Chat 은 Step 5
 - [ ] 예외 메시지 i18n 필요 여부 검토
-- [ ] README 에 로컬 개발 환경 구축 가이드 작성
-- [ ] `.gitignore` 점검 (application-local.yml, *.env 가 제외되는지)
 - [ ] pre-commit 훅 또는 Spotless 같은 포맷터 도입 검토
