@@ -32,7 +32,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 | 공통 응답 | `global/dto/ApiResponse.java` | OK |
 | 보안 설정 | `global/config/SecurityConfig.java` | OK (`/health` permitAll 반영) |
 | JWT | `global/auth/JwtTokenProvider.java`, `JwtAuthenticationFilter.java`, `CustomUserDetailsService.java` | OK |
-| 예외 | `global/exception/{CustomException, GlobalExceptionHandler, ErrorCode}.java` | OK (Recipe/Chat ErrorCode 는 선언만 — 실사용은 Step 2~6) |
+| 예외 | `global/exception/{CustomException, GlobalExceptionHandler, ErrorCode}.java` | OK. 미사용 `ErrorCode` 는 **선언 시점에만 추가** 정책 도입 (ErrorCode.java 하단 주석 참조) |
 | OAuth | `global/auth/oauth/{Kakao,Google}OAuthClient.java`, `KakaoTokenClient.java`, `OAuthUserInfo.java`, `DevOAuthController.java` | OK |
 | User 도메인 | `domain/user/{entity,dto,repository,service,controller}/*` | OK (signup / login / social). 탈퇴·마이페이지는 Step 4 |
 | 헬스체크 | `global/controller/HealthController.java` | OK (`GET /health`) |
@@ -386,6 +386,6 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 - [x] ~~README 에 로컬 개발 환경 구축 가이드 작성~~ — `README.md` + `docker-compose.yml` (pgvector/pg16) 커밋
 - [x] ~~`.gitignore` 점검~~ — 공백 구분 버그 수정, `.env*` / `*.log` / `.DS_Store` 추가. `application-{local,prod}.yml` 은 **버전 관리에 포함** (env 자리표시자만 보유, 실 secret 은 환경변수)
 - [x] ~~DB 관련 수동 검증 절차 문서화~~ — `docs/db-testing-guide.md` (Step 8 에서 JUnit 자동화 전까지 사용)
-- [ ] `ErrorCode` 선언만 있고 쓰이지 않는 Recipe/Chat 코드들 실제 사용처와 매핑 — Recipe 쪽은 Step 2 에서 부분 반영, Chat 은 Step 5
+- [x] ~~`ErrorCode` 선언만 있고 쓰이지 않는 Recipe/Chat 코드 정리~~ — `RECIPE_ALREADY_LIKED/SCRAPPED`(토글 설계상 불필요), `CHAT_ROOM_NOT_FOUND/SESSION_NOT_FOUND`(Step 5 에서 재도입) 4건 제거. 정책: "사용되는 시점에 추가"
 - [ ] 예외 메시지 i18n 필요 여부 검토
 - [ ] pre-commit 훅 또는 Spotless 같은 포맷터 도입 검토
