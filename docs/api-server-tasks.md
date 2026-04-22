@@ -14,9 +14,15 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 2. **인증/인가** — 자체 회원가입·소셜 로그인 → JWT 발급 → AI 서버까지 전달되는 토큰 체계의 출발점.
 3. **AI 서버와의 통신** — 사용자 요청을 AI 서버에 위임하고, AI 서버가 만든 결과(추천 결과 / 임베딩 등)를 다시 DB에 반영.
 
+> ### 인프라 진행 상황 (AWS)
+> - **DB (PostgreSQL + pgvector)**: 현재 로컬 개발용만 구성. **실 AWS RDS 이관은 팀원 담당** — 담당자가 세팅 완료하면 이 섹션에 엔드포인트·접속 정보 주입 방식(IAM/Secret Manager/env) 업데이트.
+> - **S3**: 이미지 업로드(presigned URL) 대상. **버킷 생성 및 IAM 권한 설정도 팀원 담당** — 생성 전까지 API 서버의 업로드 엔드포인트 구현은 **명세만 작성하고 코드 구현은 이연**.
+> - **API 서버 자체 배포** (ECS/EC2): Step 8 에서 별도 결정.
+> - 로컬 개발 기본값은 `application-local.yml` 에, 운영 주입 포맷은 `application-prod.yml` 에 env 자리표시자로 이미 준비됨.
+
 ---
 
-## 1. 현재 코드베이스 인벤토리 (2026-04-22 기준)
+## 1. 현재 코드베이스 인벤토리 (2026-04-22 기준, Step 1 완료 후)
 
 ### 이미 구현된 것
 
@@ -24,24 +30,27 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 |---|---|---|
 | 부트스트랩 | `ApiServerApplication.java` | OK |
 | 공통 응답 | `global/dto/ApiResponse.java` | OK |
-| 보안 설정 | `global/config/SecurityConfig.java` | OK |
+| 보안 설정 | `global/config/SecurityConfig.java` | OK (`/health` permitAll 반영) |
 | JWT | `global/auth/JwtTokenProvider.java`, `JwtAuthenticationFilter.java`, `CustomUserDetailsService.java` | OK |
-| 예외 | `global/exception/{CustomException, GlobalExceptionHandler, ErrorCode}.java` | OK (Recipe/Chat ErrorCode는 선언만 되어 있고 사용처 없음) |
+| 예외 | `global/exception/{CustomException, GlobalExceptionHandler, ErrorCode}.java` | OK (Recipe/Chat ErrorCode 는 선언만 — 실사용은 Step 2~6) |
 | OAuth | `global/auth/oauth/{Kakao,Google}OAuthClient.java`, `KakaoTokenClient.java`, `OAuthUserInfo.java`, `DevOAuthController.java` | OK |
-| User 도메인 | `domain/user/{entity,dto,repository,service,controller}/*` | OK (signup / login / social) |
-| DB 스키마(초안) | `src/main/resources/db/mainFields.sql` | **정리 필요** (Users 테이블 중복 정의 등) |
-| 마이그레이션 | `src/main/resources/db/V2__add_social_login_fields.sql` | **V1이 없음. Flyway/Liquibase 도입 결정 필요** |
+| User 도메인 | `domain/user/{entity,dto,repository,service,controller}/*` | OK (signup / login / social). 탈퇴·마이페이지는 Step 4 |
+| 헬스체크 | `global/controller/HealthController.java` | OK (`GET /health`) |
+| 설정 파일 | `application.yml` / `application-{local,prod}.yml` | OK (프로파일 분리, secret env 외부화) |
+| 마이그레이션 | `db/migration/V1__init.sql`, `V2__add_social_login_fields.sql`, `V3__add_user_deleted_at.sql` | OK (진실원본). JPA `ddl-auto: validate` |
+| 빌드 도구 | `build.gradle` | Flyway(core + pg) 추가됨 |
 
-### 아직 없는 것 (= 우리가 만들어야 할 것)
+### 아직 없는 것 (= 만들어야 할 것)
 
-- **Recipe 도메인** (Entity / Repository / Service / Controller)
-- **Recipe_Stats / Scrap / Like 도메인**
-- **Chat_Rooms / Session_Logs 도메인** ← AI 서버와 공유 — *소유권 합의 먼저*
-- **Fridge 도메인**
-- **User 추가 기능** (마이페이지 / 선호도 수정 / 내가 쓴 글 / 내 스크랩 목록)
-- **Admin 도메인** (레시피 승인·반려 / 사용자 차단)
-- **AI 서버 통신 모듈** (HTTP 클라이언트, 서비스-투-서비스 인증, DTO 매핑)
-- **DB 마이그레이션 도구 도입** (Flyway 권장)
+- **Recipe 도메인** (Step 2)
+- **Recipe_Stats** (Step 2, Recipe 와 함께)
+- **Upload (S3 presigned URL)** (Step 2 명세만, 구현은 AWS S3 준비 후)
+- **Like / Scrap** (Step 3)
+- **User 마이페이지 / 탈퇴 익명화** (Step 4)
+- **Fridge / Chat (read-only)** (Step 5)
+- **Admin 도메인** (Step 6)
+- **AI 서버 연동 모듈** (Step 7)
+- **통합 테스트 / 운영 준비** (Step 8) — `DemoApplicationTests` 는 `com.example.demo` 패키지에 있어 현재 컨텍스트 로딩 불가, Step 8 에서 재배치·재작성
 
 ---
 
@@ -103,15 +112,18 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
     | `fridge` | API | API, AI | API |
   - MVP 에서는 양 서버가 **같은 DB role** 공유. 운영 안정화 후 별도 role 로 권한 최소화 검토(예: AI 서버 role 은 `users` UPDATE 불가).
 
-### Phase 1. 기반 정리
+### Phase 1. 기반 정리 — **완료 (Step 1, 2026-04-22)**
 
-- [x] `mainFields.sql` 의 **Users 테이블 중복 정의 제거 + `embedding VECTOR(3072) → VECTOR(1536)`**
-- [ ] Flyway 의존성 추가(`build.gradle`) + 설정(`spring.flyway.*`)
-- [ ] `V1__init.sql` 작성 — 현재 운영 스키마(정리 후 `mainFields.sql`) 기준. 기존 `V2__add_social_login_fields.sql` 와의 순서/중복 정합성 확인 (V1 에 provider 컬럼이 이미 들어있으면 V2 는 소셜 로그인 이전 구버전 DB 용이 됨 — 필요 시 분리/재작성)
-- [ ] **회원 익명화용 `deleted_at` 컬럼 마이그레이션**: `ALTER TABLE users ADD COLUMN deleted_at TIMESTAMPTZ NULL;` (Phase 2-5 에서 사용)
-- [ ] `application.yml` / `application.properties` 중복 정리 (둘 다 있음)
-- [ ] 프로파일 분리 (`application-local.yml`, `application-prod.yml`) — AWS 배포 대비
-- [ ] `ApiServerApplication.java` 구동 확인 + 헬스체크 엔드포인트 (`GET /health`)
+§6 Step 1 에서 세부 실행. 요약:
+
+- [x] `mainFields.sql` 정리 (후에 Step 1 에서 **제거**. V1~V3 이 진실원본)
+- [x] Flyway 의존성 추가 + `spring.flyway.locations: classpath:db/migration`
+- [x] `V1__init.sql` 작성 (소셜 로그인 **이전** 스키마, BIGINT 통일, 인덱스 포함)
+- [x] `V2__add_social_login_fields.sql` `db/migration/` 으로 이동 (V1 → V2 체인)
+- [x] `V3__add_user_deleted_at.sql` (익명화용 컬럼)
+- [x] `application.properties` 제거, `application.yml` 단일화
+- [x] `application-local.yml` / `application-prod.yml` 분리
+- [x] `GET /health` 엔드포인트 + SecurityConfig `permitAll`
 
 ### Phase 2. 도메인 구현 (의존성 순서)
 
