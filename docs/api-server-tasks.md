@@ -108,6 +108,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 - [x] `mainFields.sql` 의 **Users 테이블 중복 정의 제거 + `embedding VECTOR(3072) → VECTOR(1536)`**
 - [ ] Flyway 의존성 추가(`build.gradle`) + 설정(`spring.flyway.*`)
 - [ ] `V1__init.sql` 작성 — 현재 운영 스키마(정리 후 `mainFields.sql`) 기준. 기존 `V2__add_social_login_fields.sql` 와의 순서/중복 정합성 확인 (V1 에 provider 컬럼이 이미 들어있으면 V2 는 소셜 로그인 이전 구버전 DB 용이 됨 — 필요 시 분리/재작성)
+- [ ] **회원 익명화용 `deleted_at` 컬럼 마이그레이션**: `ALTER TABLE users ADD COLUMN deleted_at TIMESTAMPTZ NULL;` (Phase 2-5 에서 사용)
 - [ ] `application.yml` / `application.properties` 중복 정리 (둘 다 있음)
 - [ ] 프로파일 분리 (`application-local.yml`, `application-prod.yml`) — AWS 배포 대비
 - [ ] `ApiServerApplication.java` 구동 확인 + 헬스체크 엔드포인트 (`GET /health`)
@@ -122,6 +123,8 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
    - 목록 조회 (페이징 + 정렬: 최신순 / 인기순)
    - 본인 작성 레시피 목록 (PENDING 포함)
    - 본인 작성 레시피 삭제
+   - **수정 API 없음** (정책 확정: 영구 불가. 오탈자도 삭제 후 재작성)
+   - 응답 DTO 에서 작성자 닉네임은 `users.nickname` 을 그대로 쓰되, 탈퇴 사용자(`deleted_at IS NOT NULL`)는 `"탈퇴한 사용자"` 로 치환
 2. [ ] **Recipe_Stats**
    - Recipe 와 1:1, 좋아요/스크랩 수 캐시
    - Like / Scrap 트랜잭션에서 같이 증감
@@ -135,6 +138,12 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
    - 내 정보 조회 / 수정 (닉네임)
    - 선호도(JSONB) 조회 / 수정
    - 비밀번호 변경 (LOCAL provider 한정)
+   - **회원 탈퇴 (익명화 방식, 결정 사항 §5 참고)**
+     * `DELETE /api/users/me` — 한 트랜잭션에서 처리
+     * PII 필드 nullify + `nickname = '탈퇴한 사용자_<user_id>'` + `is_blocked = true` + `deleted_at = now()`
+     * 본인의 `scraps`/`likes` 삭제, 해당 레시피들의 `recipe_stats` 카운터 감소
+     * `chat_rooms` / `session_logs` 삭제는 **AI 서버와 합의 후 결정** (현재 보류)
+     * 작성 레시피(`recipes.author_id`)는 유지, 표시 시점에 탈퇴 플래그로 닉네임 치환
 6. [ ] **Chat_Rooms / Session_Logs (조회 전용)**
    - 내 채팅방 목록
    - 특정 채팅방의 세션 로그 조회
@@ -211,8 +220,18 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 - [ ] **서비스-투-서비스 인증 구체안** (Phase 0-1 에서 "존재한다"까지만 결정. 내부 토큰 포맷·회전 주기는 Phase 3 구현 시 확정)
 - [ ] **JWT secret 회전 정책** (kid 지원 여부 / 동시 배포 방식)
 - [ ] **재료 분석 이미지 흐름 최종안** (프론트 → AI 직통 vs S3 임시 경유) — AI 서버 팀 결정 대기
-- [ ] 통계(인기 레시피 / 스크랩 수 / 검색 실패율) 집계 — API 서버에서 할지, 별도 분석 파이프라인을 둘지
-- [ ] 회원 탈퇴 시 작성 레시피·스크랩 처리 (하드 삭제 vs 익명화) — 현재 스키마는 `ON DELETE SET NULL` / `CASCADE` 로 갈려 있음
-- [ ] 레시피 수정 불가 정책 — 정말 영구 불가인지, 작성자가 5분 이내 수정 가능 등 완화 여지가 있는지
+- [x] ~~통계(인기 레시피 / 스크랩 수 / 검색 실패율) 집계~~ — **우선순위 최하**. MVP 에서 제외하고, 도입 필요성이 확인되면 그때 별도 명세로 처리. `recipe_stats` 는 좋아요·스크랩 수 캐시 목적으로만 유지.
+- [x] ~~회원 탈퇴 시 작성 레시피·스크랩 처리~~ — **익명화** 확정
+  - User 테이블에 `deleted_at TIMESTAMPTZ NULL` 컬럼 추가 (마이그레이션 필요)
+  - 탈퇴 API 호출 시:
+    * `email`, `password_hash`, `provider_id`, `preferences` → `NULL` 로 초기화 (PII 제거)
+    * `nickname` → `"탈퇴한 사용자"` 같은 고정 문자열. `UNIQUE` 제약 때문에 내부적으로는 `"탈퇴한 사용자_<user_id>"` 형태로 저장하고 응답 DTO 에서 꼬리표 제거하여 반환
+    * `is_blocked = true` (재로그인 방지)
+    * `deleted_at = now()`
+  - 기존 `recipes.author_id` (`ON DELETE SET NULL`), `scraps`/`likes` (`CASCADE`) 는 익명화 모델과 맞지 않음 → **탈퇴 시 유저 row 는 삭제하지 않으므로 FK 트리거는 작동하지 않음**. 즉 author_id 는 그대로 유지되고, 조회 시 닉네임만 `"탈퇴한 사용자"` 로 보인다.
+  - 탈퇴한 사용자의 스크랩/좋아요는 어떻게 할지: **삭제**(의미 없는 기록). 탈퇴 트랜잭션 안에서 `DELETE FROM scraps WHERE user_id = ?` / `DELETE FROM likes WHERE user_id = ?` + `recipe_stats` 카운터 보정.
+  - 탈퇴한 사용자의 채팅 기록(`chat_rooms`, `session_logs`): PII 포함 가능성 높음 → **삭제**. AI 서버 팀과 "탈퇴 이벤트 발생 시 AI 서버도 이 사용자 관련 데이터 파기" 합의 필요 (정책 보류 항목).
+- [x] ~~레시피 수정 불가 정책~~ — **영구 불가** 확정. 작성 후 어떤 경우에도 수정 API 를 제공하지 않는다. 오탈자 등도 삭제 후 재작성으로만 정정.
 - [ ] 임베딩 재시도 메커니즘 (DB 폴링 vs 메시지 큐 SQS)
 - [ ] AWS 운영 세부: RDS 인스턴스 타입, S3 버킷 분리(prod/dev), CloudFront 사용 여부
+- [ ] **탈퇴 시 AI 서버 데이터 파기 정책** (위 익명화 결정에서 파생됨)
