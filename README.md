@@ -60,7 +60,7 @@ curl -s http://localhost:8080/health
 | 키 | 기본(local) | 설명 |
 |---|---|---|
 | `SPRING_PROFILES_ACTIVE` | `local` | `local` / `prod` |
-| `DB_URL` | `jdbc:postgresql://localhost:5432/naengo` | JDBC URL |
+| `DB_URL` | `jdbc:postgresql://localhost:5434/naengo` | JDBC URL. 호스트 포트가 **5434** 인 이유는 `docker-compose.yml` 주석 참조 |
 | `DB_USERNAME` | `naengo` | |
 | `DB_PASSWORD` | `naengo` | |
 | `JWT_SECRET` | 32자 더미 | **운영에서는 반드시 교체**. 32자 이상 |
@@ -167,6 +167,9 @@ docs/
 
 | 증상 | 원인·해결 |
 |---|---|
+| `Connection to localhost:5432 refused` | 예전 설정이 남아있어 기본 포트로 접속 시도 중. 이 저장소는 **5434** 사용. `DB_URL` env 확인 (`Get-ChildItem Env:DB_URL`). 설정돼 있으면 제거하거나 `jdbc:postgresql://localhost:5434/naengo` 로 맞춤 |
+| `Connection to localhost:5434 refused` | 컨테이너 미기동 or 다운. `docker compose ps` 로 확인, `docker compose up -d` 재기동 |
+| `docker compose up` 시 `bind: address already in use` on 5434 | 5434 가 이미 점유됨. `docker-compose.override.yml` 을 만들어 다른 포트로 매핑(예: `5435:5432`) + `DB_URL=jdbc:postgresql://localhost:5435/naengo` env |
 | `./gradlew bootRun` 시 `FATAL: password authentication failed` | Docker 컨테이너가 아직 기동 중. `docker compose ps` 로 healthy 확인 |
 | `Validation failed for .../User` 등 Hibernate 오류 | 엔티티와 DB 스키마가 어긋남. `docker compose down -v && docker compose up -d` 로 리셋 후 재기동. 의도적 스키마 변경이면 새 `Vn__*.sql` 작성 |
 | `FlywayException: Detected applied migration not resolved locally` | 브랜치 전환 후 마이그레이션 파일이 누락됨. `docker compose down -v` 로 DB 초기화 |
