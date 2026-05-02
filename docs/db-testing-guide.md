@@ -36,23 +36,28 @@ SELECT installed_rank, version, description, success
 FROM flyway_schema_history ORDER BY installed_rank;
 ```
 
-기대값 (V4 적용 후):
+기대값 (V4 통합 이슈 해결 후):
 | rank | version | description              | success |
 |------|---------|--------------------------|---------|
 | 1    | 1       | init                     | t       |
 | 2    | 2       | add social login fields  | t       |
 | 3    | 3       | add user deleted at      | t       |
-| 4    | 4       | (V4 description)         | t       |
+| 4    | 4       | fixed schema             | t       |
 
-> V4 의 description 은 작성된 파일명(`V4__<설명>.sql`) 의 underscore 를 공백으로 치환한 값. 자세한 V4 의 의도는 [`api-server-tasks.md §1.5`](api-server-tasks.md). V4 미작성 시점에는 3행까지만 보여야 정상.
+> V4 의 description 은 작성된 파일명(`V4__<설명>.sql`) 의 underscore 를 공백으로 치환한 값.
 
-- [ ] V4 적용 후: 4건 모두 `success = true`
-- [ ] V4 미작성 시점: 3건 모두 `success = true` (4행이 보이면 미커밋 마이그레이션 → `docker compose down -v` 후 재적용)
+> ⚠️ **2026-05-02 현재 V4 통합 이슈로 자동 적용 불가**: 현 `V4__fixed_schema.sql` 은 fresh-DB 가정의 `CREATE TABLE` 모음이라 V1~V3 위에 적용하면 `relation "users" already exists` 로 실패. 자세한 옵션과 수정 방향은 [`api-server-tasks.md §1.5`](api-server-tasks.md) 와 [`docs/spec/ai-server-contract.md §5`](spec/ai-server-contract.md). 현재 검증 가능한 시나리오:
+> - V4 파일을 일시적으로 제거하고 V1~V3 만 적용 → 본 표의 1~3행
+> - 또는 옵션 (a/b/c) 중 하나 적용 후 본 표의 1~4행
+
+- [ ] V4 통합 후: 4건 모두 `success = true`
+- [ ] V4 미통합 (현 master 기준 일시 우회): V4 파일을 잠시 이동하고 1~3 행 모두 `success = true`
 
 ---
 
 ## 2. 테이블 스키마가 의도대로 생성되었다
 
+V1~V3 만 적용된 상태:
 ```sql
 \d users
 \d recipes
@@ -64,10 +69,20 @@ FROM flyway_schema_history ORDER BY installed_rank;
 \d fridge
 ```
 
-확인 포인트:
+V4 통합 후 추가:
+```sql
+\d user_profiles
+\d pending_recipes
+\d chat_messages
+SELECT trigger_name FROM information_schema.triggers
+ WHERE event_object_table IN ('likes','scraps');
+-- trigger_likes_count / trigger_scrap_count 가 보여야 함
+```
+
+확인 포인트 (V1~V3):
 - [ ] `users.provider` (VARCHAR(20) NOT NULL DEFAULT 'LOCAL')
 - [ ] `users.provider_id` (VARCHAR(255), UNIQUE 복합 제약 `uq_provider_provider_id`)
-- [ ] `users.deleted_at` (TIMESTAMPTZ NULL)
+- [ ] `users.deleted_at` (TIMESTAMPTZ NULL) — **V3 도입. V4 의 `Users` 정의에 누락되어 있어 통합 시 보존 필요**
 - [ ] `recipes.embedding` (`vector(1536)` 타입)
 - [ ] `recipes.author_id` 가 `BIGINT REFERENCES users(user_id) ON DELETE SET NULL`
 - [ ] `scraps`, `likes` 의 FK 가 `ON DELETE CASCADE`
