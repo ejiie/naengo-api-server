@@ -3,6 +3,12 @@
 > 본 문서는 **API 서버(=naengo-api-server)** 담당자가 무엇을 해야 하는지 정리한 체크리스트다.
 > AI 서버 / 프론트엔드 담당자는 자신의 영역과 인터페이스만 참고하면 된다.
 
+> ### 🔗 외부 인터페이스 — AI 서버 API 문서 (필수 참조)
+> - **AI 서버 OpenAPI/Swagger UI**: <http://43.201.62.254:8000/docs>
+> - 본 문서에서 "AI 서버 호출" 이 등장하는 모든 지점(임베딩, 추천, 재료 분석 등)의 **요청/응답 스키마는 위 문서를 진실원본으로 본다**. tasks 문서 / 명세서 본문 / 코드 상의 가정과 위 문서가 어긋날 경우 **AI 서버 docs 가 우선**.
+> - 새 명세 작성 또는 기존 명세 갱신 시 §4 "작업 절차" 의 0번 단계로 **이 URL 부터 확인** 한다.
+> - 변경이 잦은 자원이므로 캡처 대신 **링크로 참조**. 끊어진 사실이 발견되면 곧장 본 문서 / 관련 명세 / `change-log` 에 기록.
+
 ---
 
 ## 0. 한 줄 정의
@@ -22,7 +28,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 
 ---
 
-## 1. 현재 코드베이스 인벤토리 (2026-04-22 기준, Step 1 완료 후)
+## 1. 현재 코드베이스 인벤토리 (2026-05-02 갱신, Step 2 일부 완료 + V4 도입 결정)
 
 ### 이미 구현된 것
 
@@ -37,7 +43,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 | User 도메인 | `domain/user/{entity,dto,repository,service,controller}/*` | OK (signup / login / social). 탈퇴·마이페이지는 Step 4 |
 | 헬스체크 | `global/controller/HealthController.java` | OK (`GET /health`) |
 | 설정 파일 | `application.yml` / `application-{local,prod}.yml` | OK (프로파일 분리, secret env 외부화, `aws.s3.*` 키 준비) |
-| 마이그레이션 | `db/migration/V1__init.sql`, `V2__add_social_login_fields.sql`, `V3__add_user_deleted_at.sql` | OK (진실원본). JPA `ddl-auto: validate` |
+| 마이그레이션 | `db/migration/V1__init.sql`, `V2__add_social_login_fields.sql`, `V3__add_user_deleted_at.sql`, **`V4__*.sql` (작성 예정 — 아래 §1.5 참조)** | V1~V3 적용 검증 완료. **V4 는 V1 의 갱신본**(V2/V3 과는 무모순) — Step 1.5 에서 작성 후 적용 |
 | 빌드 도구 | `build.gradle` | Flyway(core + pg) 추가됨 |
 | Recipe 도메인 | `domain/recipe/{entity,repository,service,controller,dto}/*` | OK (create/read/delete + stats 동기화). 임베딩·승인 흐름은 Step 6/7 |
 | 보조 유틸 | `global/auth/SecurityUtil`, `domain/user/support/AuthorDisplayName` | OK |
@@ -47,6 +53,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 
 ### 아직 없는 것 (= 만들어야 할 것)
 
+- **V4 마이그레이션** (Step 1.5 — V1 보정본. AI 서버 docs 와의 정합 확인 후 작성·적용)
 - **Upload (S3 presigned URL) 실제 구현** (명세 있음. 코드는 AWS S3 준비 후 — Step 2-4b)
 - **Like / Scrap** (Step 3)
 - **User 마이페이지 / 탈퇴 익명화** (Step 4)
@@ -54,6 +61,39 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 - **Admin 도메인** (Step 6)
 - **AI 서버 연동 모듈** (Step 7)
 - **통합 테스트 / 운영 준비** (Step 8) — `DemoApplicationTests` 는 `com.example.demo` 패키지에 있어 현재 컨텍스트 로딩 불가, Step 8 에서 재배치·재작성
+
+---
+
+## 1.5 V4 마이그레이션 — V1 보정본 (Step 1.5, **신규**)
+
+> **결정 (2026-05-02)**: V4 는 **V1 의 갱신된 버전**이다. V2 / V3 과는 무모순이지만, "V1 이 처음부터 이렇게 작성됐어야 할" 스키마를 V4 가 patch 형태로 수렴시킨다. 즉 V4 적용 후의 최종 스키마 = (이상적 V1) + V2 + V3.
+
+### 왜 V1 을 직접 고치지 않고 V4 로 가는가
+- Flyway 의 적용 이력(`flyway_schema_history`) 무결성 때문에 이미 운영/검증 환경에 적용된 V1 의 **체크섬을 변경하면 안 된다**.
+- 신규 환경(DB 리셋 후)도 V1→V2→V3→V4 체인 한 번이면 동일한 최종 상태가 나오므로, "V4 가 V1 을 완전 대체" 한다는 표현은 **운영 의미상의 대체**(=이후 환경 구축 시 V1 의 부족분이 V4 로 메워짐) 로 해석한다.
+
+### V4 후보 항목 (확정 전)
+1. `session_logs.selected_recipe_id` FK 에 `ON DELETE SET NULL` 부여
+   - 현재 `ON DELETE` 미지정(=NO ACTION). `docs/spec/recipe-delete.md §4-5` 가 애플리케이션 레이어에서 우회하던 항목.
+   - V4 도입 시 애플리케이션 우회 코드는 유지하되 **DB 가 단독으로도 정합** 하게 됨.
+2. **AI 서버 API 문서 (위 §0 링크) 와의 컬럼 정합 보정**
+   - `chat_rooms` / `session_logs` 가 AI 서버 swagger 의 요청/응답 스키마와 1:1 매핑되는지 검토. 누락 컬럼 / 타입 불일치 / 인덱스 누락이 발견되면 V4 에 동봉.
+   - 후보 검토 항목 (확정 아님):
+     * `session_logs.chat_messages` JSONB 의 element schema 가 AI 측 `Message` 모델과 정합한가
+     * `session_logs.recommended_recipe_ids BIGINT[]` 가 AI 의 추천 응답과 호환되는가(순서 / 점수 동봉 여부)
+     * `recipes.embedding VECTOR(1536)` 차원이 AI 서버가 사용하는 임베딩 모델 차원과 일치하는가
+3. **인덱스 보강** (Step 3 / Step 5 에서 발견되는 것 모음)
+   - 현재로선 없음. Step 3 (Like/Scrap), Step 5 (Chat read-only) 명세 작성 시 발견되면 V4 에 추가.
+
+### 작성 절차
+- [ ] 1.5-a. AI 서버 `<http://43.201.62.254:8000/docs>` 정독 → 위 후보의 정합성 확인
+- [ ] 1.5-b. `V4__correct_initial_schema.sql` 작성 (네이밍은 보수적으로. 한 마이그레이션에 너무 많은 변경을 묶지 않는다)
+- [ ] 1.5-c. 신규 DB 환경에서 `docker compose down -v && docker compose up -d && ./gradlew bootRun` 으로 V1→V2→V3→V4 자동 적용 검증
+- [ ] 1.5-d. `docs/db-testing-guide.md` 의 Flyway 기대값 표 갱신 (4행)
+- [ ] 1.5-e. `README.md` 의 "V1~V3" 문구 갱신 (V1~V4)
+- [ ] 1.5-f. 본 문서 §1 인벤토리 / §6 Step 1 산출물 표시 갱신
+
+> **주의**: V4 가 적용된 환경 / 안 된 환경이 혼재할 가능성 → AI 서버 팀과 합의 시점을 맞춘다. 운영 적용 시 다운타임이 필요한 변경은 별도 파일로 분리.
 
 ---
 
@@ -220,7 +260,8 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 
 ## 4. 작업 절차 (코드를 짜기 전에 매번 거치는 루틴)
 
-1. **무엇을 만들지** `docs/spec/` 아래에 `spec-template.md` 형식으로 명세서 작성
+0. **AI 서버 / 외부 인터페이스 확인** — 본 작업이 AI 서버 / S3 / OAuth 등 외부와 닿는다면 먼저 <http://43.201.62.254:8000/docs> 를 열어 **현재 시점의 contract** 를 확인한다. 이 단계 없이 명세를 쓰면 재작업이 거의 확실.
+1. **무엇을 만들지** `docs/spec/` 아래에 `spec-template.md` 형식으로 명세서 작성. AI 서버 호출이 포함되는 명세는 §6 "외부 의존성" 에 호출하는 AI 서버 endpoint 경로·요청 모델·응답 모델을 docs URL 기반으로 명시한다.
 2. 명세서를 LLM(또는 본인)에게 전달 → 코드 생성
 3. 받은 코드 검토, 수정 사항이 생기면 `docs/changes/` 아래에 `change-log-template.md` 형식으로 변경 이력 기록
 4. 테스트 → 커밋 → 푸시
@@ -230,6 +271,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
    - `api-server-tasks.md §5 보류 항목` — 새로 파생된 결정 보류 사항이 생기면 추가
    - `README.md` — 새 환경변수·새 엔드포인트·새 전제 조건이 생기면 반영
    - 명세를 벗어난 구현 디테일은 `docs/changes/` 에 기록
+   - **AI 서버 docs 와 어긋난 가정을 발견했다면** §1.5 V4 후보 항목에 추가하거나 별도 마이그레이션 / 명세 발행
 
 이렇게 하면 "왜 이렇게 짰지?" 가 사라지고, 다음 사람(또는 미래의 본인)이 명세서만 봐도 의도를 복원할 수 있다.
 
@@ -256,13 +298,35 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 - [ ] 임베딩 재시도 메커니즘 (DB 폴링 vs 메시지 큐 SQS)
 - [ ] AWS 운영 세부: RDS 인스턴스 타입, S3 버킷 분리(prod/dev), CloudFront 사용 여부
 - [ ] **탈퇴 시 AI 서버 데이터 파기 정책** (위 익명화 결정에서 파생됨)
+- [ ] **AI 서버 docs 와의 정합 점검 결과** — Step 1.5-1 산출물에 따라 V4 후보가 확정됨. 다음 항목은 그 시점에 결정:
+  - `recipes.embedding` 차원 (1536) 이 실제 사용 모델과 일치하는가
+  - `session_logs.recommended_recipe_ids` 가 추천 결과의 모든 필드를 담는가 (점수·근거 등 메타가 별도 필요한지)
+  - `chat_rooms` / `session_logs` 의 `status` enum 이 AI 측 상태머신과 정합한가
+- [ ] **AI 서버 docs URL 의 운영/스테이지 분리** — 현재 `43.201.62.254:8000` 단일 호스트. 운영 분리 시점에 `application-prod.yml` 의 `ai.server.base-url` 갱신 필요
 
 ---
 
 ## 6. 작업 순서 (즉시 착수 가능한 순)
 
-모든 Phase 0 결정이 끝난 현재, 다음 순서대로 진행한다. **각 스텝은 "명세서 작성 → LLM 코드 생성 → 검토·수정 → 커밋"** 루틴을 그대로 따른다 (§4).
+모든 Phase 0 결정이 끝난 현재, 다음 순서대로 진행한다. **각 스텝은 "AI 서버 docs 확인 → 명세서 작성 → LLM 코드 생성 → 검토·수정 → 커밋"** 루틴을 그대로 따른다 (§4).
 의존성이 있는 스텝은 앞 스텝 완료 전에는 착수하지 않는다.
+
+> ### 🎯 재조정된 우선순위 (2026-05-02)
+> AI 서버 docs (`http://43.201.62.254:8000/docs`) 가 실제로 떠 있고 계약이 가시화됨에 따라 다음과 같이 우선순위를 재조정한다.
+>
+> | 순위 | 작업 | 비고 |
+> |---|---|---|
+> | **즉시** | **Step 1.5 — V4 마이그레이션** (V1 보정본) | AI 서버 docs 와 스키마 정합부터 맞춰야 이후 Step 5/6/7 의 계약이 흔들리지 않는다. 본 PR / 본 브랜치(`claude/update-migrations-api-docs-7Y4fU`) 의 1차 산출물. |
+> | 1 | Step 7 일부 — **AI 서버 contract 검토 산출물** | docs URL 의 endpoint 표를 `docs/spec/ai-server-contract.md` 등으로 정리. 코드 작성보다 먼저. **Step 6 / Step 7 본 구현의 전제** 가 됨. |
+> | 2 | Step 3 — Like / Scrap | Recipe 도메인 완성도 끝맺기. AI 서버 의존 없음. |
+> | 3 | Step 4 — User 마이페이지 / 탈퇴 | Step 3 결과(스크랩/좋아요 삭제 대상) 필요. |
+> | 4 | Step 5 — Fridge / Chat read-only | **Chat 의 read 모델이 V4 에서 결정될 가능성** 이 있어 Step 1.5 후로 미룸. |
+> | 5 | Step 6 — Admin (승인 흐름) | Step 7 의 임베딩 endpoint 가 명확해진 이후. |
+> | 6 | Step 7 본 구현 — AI 서버 클라이언트 | Step 1.5 와 "AI 서버 contract 검토 산출물" 완료 후. |
+> | 7 | Step 2-4b — Upload 실 구현 | AWS S3 버킷 준비 시점에. 변동 없음. |
+> | 마지막 | Step 8 — 운영 준비 / 통합 테스트 | 변동 없음. |
+>
+> **즉시 착수 항목 = Step 1.5**. 이후 일정은 위 표에 따른다.
 
 ### Step 1. 인프라 기반 정리 (선행, 다른 모든 스텝의 전제) — **완료 (실 기동 검증 포함)**
 - [x] 1-1. `build.gradle` 에 Flyway 의존성 추가 (`spring-boot-starter-flyway` + `flyway-database-postgresql`. Spring Boot 4 는 `flyway-core` 만으로는 오토컨피그가 걸리지 않음)
@@ -279,6 +343,25 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
   - `GET /health` → `{"status":"UP"}`
 
 **산출물**: `build.gradle`, `application{,-local,-prod}.yml`, `db/migration/V1~V3.sql`, `HealthController`, `SecurityConfig` 업데이트
+
+---
+
+### Step 1.5. V4 마이그레이션 — V1 보정본 (**즉시 착수, 2026-05-02 신설**)
+의존: Step 1 완료. **이후 모든 Step 의 전제**.
+
+상세 결정·후보 항목은 §1.5 참조. 요약:
+
+- [ ] 1.5-1. AI 서버 OpenAPI/Swagger (<http://43.201.62.254:8000/docs>) 정독 → `recipes` / `chat_rooms` / `session_logs` / `users` / `fridge` 와의 컬럼·타입·참조 정합 점검
+- [ ] 1.5-2. 점검 결과를 `docs/spec/ai-server-contract.md` (신규, 임시) 에 표 형태로 캡처 — endpoint 목록 + 우리 DB 와 닿는 모델만
+- [ ] 1.5-3. 정합되지 않는 항목을 `V4__correct_initial_schema.sql` 로 작성 (또는 더 좁은 이름으로 분할)
+  - 알려진 첫 항목: `session_logs.selected_recipe_id` 에 `ON DELETE SET NULL` 부여 (`docs/spec/recipe-delete.md §4-5` 메모)
+  - 추가 항목은 1.5-1 결과로 결정
+- [ ] 1.5-4. `docker compose down -v && docker compose up -d && ./gradlew bootRun` 으로 V1→V2→V3→V4 자동 적용 검증
+- [ ] 1.5-5. Hibernate `validate` 통과 확인 (엔티티 변경이 동반됐다면 함께 PR)
+- [ ] 1.5-6. `docs/db-testing-guide.md` Flyway 기대값 표 4행으로 갱신 + V4 가 만지는 컬럼/제약 검증 항목 추가
+- [ ] 1.5-7. `README.md` 의 "V1~V3" 문구 갱신, 본 문서 §1 인벤토리 갱신
+
+**산출물**: `db/migration/V4__*.sql`, `docs/spec/ai-server-contract.md`, 갱신된 `db-testing-guide.md` / `README.md` / 본 문서
 
 ---
 
@@ -357,11 +440,17 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 ---
 
 ### Step 7. AI 서버 연동 모듈
-의존: Step 6 (승인 흐름 존재해야 임베딩 호출 포인트가 있음). Step 2 와 병행 가능하나 보류.
+의존: **Step 1.5 (V4)** + Step 6 (승인 흐름 존재해야 임베딩 호출 포인트가 있음). Step 2 와 병행 가능하나 보류.
 
-- [ ] 7-1. `global/client/ai/` 패키지 신설, WebClient(또는 RestClient) Bean 등록
+> **새 진입점**: <http://43.201.62.254:8000/docs> 의 endpoint 목록을 먼저 본다. 7-0 산출물은 Step 1.5 와 묶어 선행 처리됨.
+
+- [ ] 7-0. **AI 서버 contract 문서화** (Step 1.5 와 함께 진행) — `docs/spec/ai-server-contract.md`
+  - endpoint URL / method / 요청 모델 / 응답 모델 / 인증 헤더 / 에러 응답 표
+  - "API 서버가 실제 호출할 endpoint" 만 추려 정리. 변경 잦으므로 "스냅샷 시점" 명시
+- [ ] 7-1. `global/client/ai/` 패키지 신설, WebClient(또는 RestClient) Bean 등록 (base URL 은 docs 호스트 기반, env 로 주입)
 - [ ] 7-2. `application.yml` 에 AI 서버 base URL / 타임아웃 / 재시도 / 내부 토큰 주입
-- [ ] 7-3. `EmbeddingClient.requestEmbedding(recipeId, fullContent)` 구현 (`float[1536]` 반환)
+  - `ai.server.base-url: ${AI_SERVER_BASE_URL:http://43.201.62.254:8000}` (로컬 기본값을 dev 인스턴스로)
+- [ ] 7-3. `EmbeddingClient.requestEmbedding(recipeId, fullContent)` 구현 (`float[1536]` 반환). 실제 endpoint 경로는 7-0 에서 확정
 - [ ] 7-4. Admin 레시피 승인 트랜잭션 커밋 후 `EmbeddingClient` 호출 → `recipes.embedding` UPDATE (Step 6-1 과 연결)
 - [ ] 7-5. 실패 재시도 스케줄러 (`status='APPROVED' AND embedding IS NULL` 조회 → 재호출). MVP 는 단순 cron 으로 충분
 - [ ] 7-6. `ErrorCode` 에 `AI_SERVER_UNAVAILABLE`, `EMBEDDING_FAILED` 추가

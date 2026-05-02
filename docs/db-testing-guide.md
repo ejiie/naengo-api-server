@@ -2,6 +2,7 @@
 
 > **위치**: Step 8 에서 JUnit 통합 테스트로 자동화하기 전, **수동으로** 돌려 확신을 얻기 위한 체크리스트.
 > **선결**: `docker compose up -d` 로 로컬 Postgres(pgvector) 가 기동 중이어야 한다.
+> **AI 서버 contract 가 닿는 테이블** (`recipes.embedding`, `chat_rooms`, `session_logs`) 의 검증 항목은 [AI 서버 OpenAPI](http://43.201.62.254:8000/docs) 와 대조하며 본다. 본 가이드의 기대값과 docs 가 어긋나면 docs 가 우선.
 
 모든 커맨드는 저장소 루트에서 실행한다고 가정한다.
 
@@ -28,21 +29,25 @@ docker compose exec postgres psql -U naengo -d naengo
 
 ---
 
-## 1. Flyway 마이그레이션이 V1 → V2 → V3 순으로 적용된다
+## 1. Flyway 마이그레이션이 V1 → V2 → V3 → V4 순으로 적용된다
 
 ```sql
 SELECT installed_rank, version, description, success
 FROM flyway_schema_history ORDER BY installed_rank;
 ```
 
-기대값:
-| rank | version | description             | success |
-|------|---------|-------------------------|---------|
-| 1    | 1       | init                    | t       |
-| 2    | 2       | add social login fields | t       |
-| 3    | 3       | add user deleted at     | t       |
+기대값 (V4 적용 후):
+| rank | version | description              | success |
+|------|---------|--------------------------|---------|
+| 1    | 1       | init                     | t       |
+| 2    | 2       | add social login fields  | t       |
+| 3    | 3       | add user deleted at      | t       |
+| 4    | 4       | (V4 description)         | t       |
 
-- [ ] 3건 모두 `success = true`
+> V4 의 description 은 작성된 파일명(`V4__<설명>.sql`) 의 underscore 를 공백으로 치환한 값. 자세한 V4 의 의도는 [`api-server-tasks.md §1.5`](api-server-tasks.md). V4 미작성 시점에는 3행까지만 보여야 정상.
+
+- [ ] V4 적용 후: 4건 모두 `success = true`
+- [ ] V4 미작성 시점: 3건 모두 `success = true` (4행이 보이면 미커밋 마이그레이션 → `docker compose down -v` 후 재적용)
 
 ---
 
@@ -66,7 +71,14 @@ FROM flyway_schema_history ORDER BY installed_rank;
 - [ ] `recipes.embedding` (`vector(1536)` 타입)
 - [ ] `recipes.author_id` 가 `BIGINT REFERENCES users(user_id) ON DELETE SET NULL`
 - [ ] `scraps`, `likes` 의 FK 가 `ON DELETE CASCADE`
-- [ ] `session_logs.selected_recipe_id` FK 에 `ON DELETE` 지정 없음 (NO ACTION). 이 경우 API 서버가 애플리케이션 단에서 NULL 처리 후 삭제해야 한다 — §8 에서 검증.
+- [ ] `session_logs.selected_recipe_id` FK 의 `ON DELETE` 동작
+  - **V4 미적용**: `NO ACTION`. API 서버가 애플리케이션 단에서 NULL 처리 후 삭제 — §8 에서 검증.
+  - **V4 적용 후 (Step 1.5 가 본 항목을 V4 에 포함했다면)**: `SET NULL`. DB 단독으로도 정합. 애플리케이션 우회 코드는 그대로 유지(이중 안전). 확인 SQL:
+    ```sql
+    SELECT conname, confdeltype FROM pg_constraint
+    WHERE conrelid = 'session_logs'::regclass AND contype = 'f';
+    -- selected_recipe_id 의 confdeltype 이 'n' (= SET NULL) 이어야 함
+    ```
 
 ---
 

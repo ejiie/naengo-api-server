@@ -5,6 +5,7 @@
 > 이 저장소만 읽고도 다른 팀원 도움 없이 로컬에서 기동할 수 있게 작성되어 있다.
 > 아키텍처·책임 분담·진행 상황은 **[`docs/api-server-tasks.md`](docs/api-server-tasks.md)** 를 우선 참고.
 > 기능별 상세 계약은 **[`docs/spec/`](docs/spec/)**, DB 동작 검증 방법은 **[`docs/db-testing-guide.md`](docs/db-testing-guide.md)**.
+> AI 서버 호출이 포함된 작업은 **[AI 서버 OpenAPI/Swagger](http://43.201.62.254:8000/docs)** 가 진실원본 — 명세 작성/코딩 전에 반드시 확인.
 
 ---
 
@@ -85,9 +86,11 @@ docker compose exec postgres psql -U naengo -d naengo
 ### 스키마 완전 리셋
 
 ```bash
-docker compose down -v    # 볼륨까지 삭제 → 다음 기동 시 V1~V3 재적용
+docker compose down -v    # 볼륨까지 삭제 → 다음 기동 시 V1~V4 재적용
 docker compose up -d
 ```
+
+> V4 는 V1 의 보정본(=V1 이 처음부터 그렇게 작성됐어야 할 부족분 수렴). V2 / V3 와는 무모순. 자세한 결정 배경은 [`docs/api-server-tasks.md §1.5`](docs/api-server-tasks.md) 참조.
 
 ### 빌드 / 테스트
 
@@ -140,7 +143,8 @@ src/main/resources/
 └── db/migration/
     ├── V1__init.sql
     ├── V2__add_social_login_fields.sql
-    └── V3__add_user_deleted_at.sql
+    ├── V3__add_user_deleted_at.sql
+    └── V4__*.sql               (V1 보정본 — Step 1.5 에서 작성·적용)
 
 docs/
 ├── api-server-tasks.md       담당 범위·진행 현황·Step 순서
