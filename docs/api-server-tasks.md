@@ -47,7 +47,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 | 빌드 도구 | `build.gradle` | Flyway(core + pg) 추가됨 |
 | Recipe 도메인 | `domain/recipe/{entity,repository,service,controller,dto}/*` | OK (create/read/delete + stats 동기화). 임베딩·승인 흐름은 Step 6/7 |
 | 보조 유틸 | `global/auth/SecurityUtil`, `domain/user/support/AuthorDisplayName` | OK |
-| 명세서 | `docs/spec/recipe-{create,read,delete}.md`, `docs/spec/upload-presigned-url.md` | OK |
+| 명세서 | `docs/spec/recipe-{create,read,delete}.md`, `docs/spec/upload-presigned-url.md`, `docs/spec/ai-server-contract.md` (2026-05-02 신설, AI 서버 OpenAPI 0.1.0 스냅샷·갭분석) | OK |
 | 로컬 개발 환경 | `docker-compose.yml` (pgvector/pg16) | OK |
 | 온보딩 / 가이드 | `README.md`, `docs/db-testing-guide.md` | OK |
 
@@ -67,31 +67,45 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 ## 1.5 V4 마이그레이션 — V1 보정본 (Step 1.5, **신규**)
 
 > **결정 (2026-05-02)**: V4 는 **V1 의 갱신된 버전**이다. V2 / V3 과는 무모순이지만, "V1 이 처음부터 이렇게 작성됐어야 할" 스키마를 V4 가 patch 형태로 수렴시킨다. 즉 V4 적용 후의 최종 스키마 = (이상적 V1) + V2 + V3.
+>
+> **AI 서버 contract 검토 결과 (2026-05-02)**: `docs/api-1.json` (AI 서버 OpenAPI 0.1.0) 정독 후 갭 분석 → [`docs/spec/ai-server-contract.md`](spec/ai-server-contract.md) 에 표로 정리. V4 는 그 문서의 §5 "V4 에 포함" 항목만 다룬다. 합의가 필요한 큰 변경은 V5/V6 로 이연.
 
 ### 왜 V1 을 직접 고치지 않고 V4 로 가는가
 - Flyway 의 적용 이력(`flyway_schema_history`) 무결성 때문에 이미 운영/검증 환경에 적용된 V1 의 **체크섬을 변경하면 안 된다**.
 - 신규 환경(DB 리셋 후)도 V1→V2→V3→V4 체인 한 번이면 동일한 최종 상태가 나오므로, "V4 가 V1 을 완전 대체" 한다는 표현은 **운영 의미상의 대체**(=이후 환경 구축 시 V1 의 부족분이 V4 로 메워짐) 로 해석한다.
 
-### V4 후보 항목 (확정 전)
-1. `session_logs.selected_recipe_id` FK 에 `ON DELETE SET NULL` 부여
-   - 현재 `ON DELETE` 미지정(=NO ACTION). `docs/spec/recipe-delete.md §4-5` 가 애플리케이션 레이어에서 우회하던 항목.
-   - V4 도입 시 애플리케이션 우회 코드는 유지하되 **DB 가 단독으로도 정합** 하게 됨.
-2. **AI 서버 API 문서 (위 §0 링크) 와의 컬럼 정합 보정**
-   - `chat_rooms` / `session_logs` 가 AI 서버 swagger 의 요청/응답 스키마와 1:1 매핑되는지 검토. 누락 컬럼 / 타입 불일치 / 인덱스 누락이 발견되면 V4 에 동봉.
-   - 후보 검토 항목 (확정 아님):
-     * `session_logs.chat_messages` JSONB 의 element schema 가 AI 측 `Message` 모델과 정합한가
-     * `session_logs.recommended_recipe_ids BIGINT[]` 가 AI 의 추천 응답과 호환되는가(순서 / 점수 동봉 여부)
-     * `recipes.embedding VECTOR(1536)` 차원이 AI 서버가 사용하는 임베딩 모델 차원과 일치하는가
-3. **인덱스 보강** (Step 3 / Step 5 에서 발견되는 것 모음)
-   - 현재로선 없음. Step 3 (Like/Scrap), Step 5 (Chat read-only) 명세 작성 시 발견되면 V4 에 추가.
+### V4 확정 항목 (`docs/spec/ai-server-contract.md §5` 와 동일)
+1. **`recipes` 컬럼 추가** — AI 서버 `RecipeResponse` 가 노출하는 필드를 우리 DB 가 못 담고 있음. 누락 11개:
+   - `description TEXT`
+   - `ingredients_raw TEXT`
+   - `instructions JSONB` (string[])
+   - `servings NUMERIC(4,1)`
+   - `cooking_time INTEGER` (단위: 분)
+   - `calories INTEGER`
+   - `difficulty VARCHAR(10) CHECK (difficulty IN ('easy','normal','hard'))`
+   - `category JSONB` (string[])
+   - `tags JSONB` (string[])
+   - `tips JSONB` (string[])
+   - `video_url VARCHAR(512)` + `CREATE INDEX ... ON recipes(video_url) WHERE video_url IS NOT NULL` (AI 의 `GET /api/v1/admin/recipes?video_url=` 가 키로 쓰므로)
+2. **`recipes.ingredients` JSONB element schema 확장** — DDL 변경은 없음(JSONB). 명세·DTO·매퍼만 갱신 → `{name, amount}` → `{name, amount, unit, type, note}`.
+3. **`session_logs.selected_recipe_id` FK → `ON DELETE SET NULL`** (`docs/spec/recipe-delete.md §4-5` 의 원래 후보. 단독 변경이라 여전히 V4 에 포함).
+
+### V4 에 포함하지 않음 (= 합의 후 V5/V6 으로 이연)
+- `chat_rooms.room_id` 타입 (VARCHAR → BIGINT/BIGSERIAL) — AI 서버 DB 공유 여부·room_id 발급 주체 합의 필요
+- `session_logs` 폐기 / `chat_messages` 신설 (AI 의 per-message 모델) — 데이터 모델 합의 필요
+- `recipes.status` 와 AI RAG 검색의 정합 — 정책 합의 (보류 §5)
+- `recipes.source` ↔ AI `author_type` — 매핑 레이어로 흡수, DDL 변경 없음
+- `/internal/embed` 부재 → Phase 0-3 재확인 (원안 옵션 B 유지 시 코드 변경 없음)
 
 ### 작성 절차
-- [ ] 1.5-a. AI 서버 `<http://43.201.62.254:8000/docs>` 정독 → 위 후보의 정합성 확인
-- [ ] 1.5-b. `V4__correct_initial_schema.sql` 작성 (네이밍은 보수적으로. 한 마이그레이션에 너무 많은 변경을 묶지 않는다)
+- [ ] 1.5-a. ~~AI 서버 docs 정독 → 후보 정합성 확인~~ — **완료 (2026-05-02). 산출물: `docs/spec/ai-server-contract.md`**
+- [ ] 1.5-b. `V4__align_recipe_with_ai_contract.sql` 작성 (위 "확정 항목" 1, 3 만. 2번은 SQL 변경 없음)
 - [ ] 1.5-c. 신규 DB 환경에서 `docker compose down -v && docker compose up -d && ./gradlew bootRun` 으로 V1→V2→V3→V4 자동 적용 검증
 - [ ] 1.5-d. `docs/db-testing-guide.md` 의 Flyway 기대값 표 갱신 (4행)
-- [ ] 1.5-e. `README.md` 의 "V1~V3" 문구 갱신 (V1~V4)
+- [ ] 1.5-e. `README.md` 의 "V1~V3" 문구 갱신 (V1~V4) — **완료**
 - [ ] 1.5-f. 본 문서 §1 인벤토리 / §6 Step 1 산출물 표시 갱신
+- [ ] 1.5-g. `Recipe` 엔티티·DTO·매퍼·`SPEC-20260422-02/03` 갱신 (별도 PR 가능)
+- [ ] 1.5-h. AI 서버 팀과 §"V4 에 포함하지 않음" 5개 항목 합의 회의
 
 > **주의**: V4 가 적용된 환경 / 안 된 환경이 혼재할 가능성 → AI 서버 팀과 합의 시점을 맞춘다. 운영 적용 시 다운타임이 필요한 변경은 별도 파일로 분리.
 
@@ -119,13 +133,17 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
   - AI 서버 팀과 **컬럼 시멘틱 변경이 필요할 때** 는 Flyway 마이그레이션 전 합의 필요 (공유 자원이므로)
 - [x] **레시피 임베딩** — `VECTOR(1536)`, 관리자 승인 시점에 생성
   - 스키마: `recipes.embedding VECTOR(1536)` (OpenAI `text-embedding-3-small` 기준 또는 동급)
-  - 플로우:
+  - 원안 (2026-04-22 결정):
     1. 사용자 레시피 작성 → `status = 'PENDING'`, `embedding = NULL`
     2. 관리자 승인 API 호출 → API 서버 트랜잭션에서 `status = 'APPROVED'` 변경
     3. 트랜잭션 **커밋 후** AI 서버 `/internal/embed` 호출 (내부 토큰 사용) → vector 반환
     4. API 서버가 `UPDATE recipes SET embedding = ? WHERE recipe_id = ?`
   - 3번 실패 시 승인 자체는 유지 (사용자 체감 우선). 실패 건은 재시도 큐 or cron 으로 `embedding IS NULL AND status = 'APPROVED'` 조회 후 재생성.
   - **대안 논의**: AI 서버가 DB 에 직접 UPDATE 하는 것도 가능하지만, `recipes` 테이블 쓰기 권한자를 API 서버로 한정하기 위해 이 방식을 택함(책임 경계 명확화).
+  - 🟡 **2026-05-02 갱신 — 재합의 필요**: AI 서버 OpenAPI(`docs/api-1.json`) 에 `/internal/embed` endpoint 가 부재. 현 시점에서 위 3~4 단계는 동작 불가. 두 갈래로 진행:
+    - 옵션 (A) AI 서버에 `/internal/embed` 신설 요청 → 원안 그대로 진행
+    - 옵션 (B) AI 서버가 자체 cron 으로 `WHERE embedding IS NULL AND status='APPROVED'` 조회 후 채움 — 즉 `embedding` 의 책임을 AI 서버에 완전 이양 (`§0 테이블별 책임` 표가 이미 그렇게 되어 있어 일관성 있음). API 서버 코드는 임베딩에 손대지 않음.
+    - **잠정 채택**: 옵션 (B). AI 서버 팀 회신 시 변경 가능. Step 7 본 구현 시 재확인.
 - [x] **이미지 업로드 — AWS S3 + presigned URL 방식**
   - 전제: 인프라를 AWS 로 올릴 예정 → S3 기본 사용. API 서버 인스턴스가 대용량 바이너리를 중계하는 구조는 처음부터 피한다.
   - 플로우 (레시피 사진):
@@ -298,10 +316,15 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 - [ ] 임베딩 재시도 메커니즘 (DB 폴링 vs 메시지 큐 SQS)
 - [ ] AWS 운영 세부: RDS 인스턴스 타입, S3 버킷 분리(prod/dev), CloudFront 사용 여부
 - [ ] **탈퇴 시 AI 서버 데이터 파기 정책** (위 익명화 결정에서 파생됨)
-- [ ] **AI 서버 docs 와의 정합 점검 결과** — Step 1.5-1 산출물에 따라 V4 후보가 확정됨. 다음 항목은 그 시점에 결정:
-  - `recipes.embedding` 차원 (1536) 이 실제 사용 모델과 일치하는가
-  - `session_logs.recommended_recipe_ids` 가 추천 결과의 모든 필드를 담는가 (점수·근거 등 메타가 별도 필요한지)
-  - `chat_rooms` / `session_logs` 의 `status` enum 이 AI 측 상태머신과 정합한가
+- [x] ~~**AI 서버 docs 와의 정합 점검 결과**~~ — 2026-05-02 완료. `docs/spec/ai-server-contract.md` 발행. 합의 필요한 항목은 아래로 분리.
+- [ ] **AI 서버 contract 미합의 항목 (V4 범위 외, V5/V6 후보)** — `docs/spec/ai-server-contract.md §4` 발췌:
+  - `chat_rooms.room_id` 타입 (현재 `VARCHAR(100)` vs AI 응답 `integer`) 정합
+  - `session_logs` 폐기 + AI per-message 모델(`chat_messages`)로 수렴 여부
+  - `recipes.status` (PENDING/APPROVED/REJECTED) 와 AI RAG 검색의 정합 (RAG 가 PENDING 까지 노출하는지)
+  - `recipes.source` ('STANDARD'/'USER') ↔ AI `author_type` ('ADMIN'/'USER') 매핑 (현재 잠정: 응답 매퍼에서 `STANDARD → ADMIN`)
+  - AI 서버에 `/internal/embed` 신설 여부 (Phase 0-3 옵션 B 잠정 채택)
+  - AI 서버가 우리 DB 와 동일한 Postgres 인스턴스를 쓰는지 / 별도 DB 인지 (Phase 0-5 가 "공유" 였으나 contract 상 모델 차이가 커서 재확인 필요)
+  - AI 서버 인증 도입 시점 — 현재 `user_id=1` 고정. Phase 0-1 JWT secret 공유는 그 이후
 - [ ] **AI 서버 docs URL 의 운영/스테이지 분리** — 현재 `43.201.62.254:8000` 단일 호스트. 운영 분리 시점에 `application-prod.yml` 의 `ai.server.base-url` 갱신 필요
 
 ---
@@ -440,20 +463,20 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 ---
 
 ### Step 7. AI 서버 연동 모듈
-의존: **Step 1.5 (V4)** + Step 6 (승인 흐름 존재해야 임베딩 호출 포인트가 있음). Step 2 와 병행 가능하나 보류.
+의존: **Step 1.5 (V4)** 완료 + AI 서버 팀과 §0 phase 0-3 옵션 결정.
 
-> **새 진입점**: <http://43.201.62.254:8000/docs> 의 endpoint 목록을 먼저 본다. 7-0 산출물은 Step 1.5 와 묶어 선행 처리됨.
+> **2026-05-02 갱신**: AI 서버 OpenAPI 스냅샷 (`docs/spec/ai-server-contract.md`) 작성 완료. **현 시점 AI 서버에 `/internal/embed` 가 부재** → Phase 0-3 옵션 (B) (AI 자체 cron) 잠정 채택. 옵션 (B) 가 유지되면 Step 7 에서 API 서버가 호출할 AI endpoint 가 사실상 없으므로 본 Step 의 산출물도 가벼워진다.
 
-- [ ] 7-0. **AI 서버 contract 문서화** (Step 1.5 와 함께 진행) — `docs/spec/ai-server-contract.md`
-  - endpoint URL / method / 요청 모델 / 응답 모델 / 인증 헤더 / 에러 응답 표
-  - "API 서버가 실제 호출할 endpoint" 만 추려 정리. 변경 잦으므로 "스냅샷 시점" 명시
-- [ ] 7-1. `global/client/ai/` 패키지 신설, WebClient(또는 RestClient) Bean 등록 (base URL 은 docs 호스트 기반, env 로 주입)
-- [ ] 7-2. `application.yml` 에 AI 서버 base URL / 타임아웃 / 재시도 / 내부 토큰 주입
-  - `ai.server.base-url: ${AI_SERVER_BASE_URL:http://43.201.62.254:8000}` (로컬 기본값을 dev 인스턴스로)
-- [ ] 7-3. `EmbeddingClient.requestEmbedding(recipeId, fullContent)` 구현 (`float[1536]` 반환). 실제 endpoint 경로는 7-0 에서 확정
-- [ ] 7-4. Admin 레시피 승인 트랜잭션 커밋 후 `EmbeddingClient` 호출 → `recipes.embedding` UPDATE (Step 6-1 과 연결)
-- [ ] 7-5. 실패 재시도 스케줄러 (`status='APPROVED' AND embedding IS NULL` 조회 → 재호출). MVP 는 단순 cron 으로 충분
-- [ ] 7-6. `ErrorCode` 에 `AI_SERVER_UNAVAILABLE`, `EMBEDDING_FAILED` 추가
+- [x] 7-0. **AI 서버 contract 문서화** — 완료. `docs/spec/ai-server-contract.md` 참조
+- [ ] 7-1. (옵션 B 유지 시) **본 Step 보류** — API 서버가 AI 서버를 호출할 일이 없음. Step 6 승인 워크플로는 `embedding` 에 손대지 않고 `status` 만 변경
+- [ ] 7-1'. (옵션 A 채택 시) `global/client/ai/` 패키지 신설, WebClient(또는 RestClient) Bean 등록
+- [ ] 7-2. `application.yml` 에 AI 서버 base URL / 타임아웃 (호출 endpoint 가 생긴 시점에)
+  - `ai.server.base-url: ${AI_SERVER_BASE_URL:http://43.201.62.254:8000}` (현재 dev 인스턴스 호스트)
+  - 실제 path 는 `/api/v1/...` prefix (OpenAPI 기준) — `/internal/*` 가 신설되면 그 path 를 따른다
+- [ ] 7-3. (옵션 A) `EmbeddingClient.requestEmbedding(recipeId, fullContent)` 구현. 실제 endpoint·요청·응답 schema 는 AI 측 신설 결과 따라감
+- [ ] 7-4. (옵션 A) Admin 레시피 승인 트랜잭션 커밋 후 `EmbeddingClient` 호출 → `recipes.embedding` UPDATE (Step 6-1 과 연결)
+- [ ] 7-5. (옵션 A·B 공통) `status='APPROVED' AND embedding IS NULL` 모니터링 (옵션 B 면 단순 메트릭, 옵션 A 면 재시도 잡)
+- [ ] 7-6. `ErrorCode` 에 `AI_SERVER_UNAVAILABLE`, `EMBEDDING_FAILED` 추가 (옵션 A 시점에)
 
 **산출물**: `global/client/ai/*`, 승인 흐름 완결, 재시도 잡
 

@@ -71,9 +71,28 @@ FROM flyway_schema_history ORDER BY installed_rank;
 - [ ] `recipes.embedding` (`vector(1536)` 타입)
 - [ ] `recipes.author_id` 가 `BIGINT REFERENCES users(user_id) ON DELETE SET NULL`
 - [ ] `scraps`, `likes` 의 FK 가 `ON DELETE CASCADE`
+- [ ] **V4 적용 후**: `recipes` 에 다음 컬럼 존재 (`docs/spec/ai-server-contract.md §5`)
+  - `description` TEXT
+  - `ingredients_raw` TEXT
+  - `instructions` JSONB
+  - `servings` NUMERIC(4,1)
+  - `cooking_time` INTEGER
+  - `calories` INTEGER (NULL 가능)
+  - `difficulty` VARCHAR(10), CHECK 제약 (`easy`/`normal`/`hard`)
+  - `category` JSONB
+  - `tags` JSONB
+  - `tips` JSONB
+  - `video_url` VARCHAR(512)
+  - `recipes(video_url)` 부분 인덱스 (`WHERE video_url IS NOT NULL`)
+
+  확인 SQL:
+  ```sql
+  \d recipes
+  SELECT indexname FROM pg_indexes WHERE tablename = 'recipes';
+  ```
 - [ ] `session_logs.selected_recipe_id` FK 의 `ON DELETE` 동작
   - **V4 미적용**: `NO ACTION`. API 서버가 애플리케이션 단에서 NULL 처리 후 삭제 — §8 에서 검증.
-  - **V4 적용 후 (Step 1.5 가 본 항목을 V4 에 포함했다면)**: `SET NULL`. DB 단독으로도 정합. 애플리케이션 우회 코드는 그대로 유지(이중 안전). 확인 SQL:
+  - **V4 적용 후**: `SET NULL`. DB 단독으로도 정합. 애플리케이션 우회 코드는 그대로 유지(이중 안전). 확인 SQL:
     ```sql
     SELECT conname, confdeltype FROM pg_constraint
     WHERE conrelid = 'session_logs'::regclass AND contype = 'f';
