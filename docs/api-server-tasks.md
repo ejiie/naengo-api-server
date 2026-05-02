@@ -43,7 +43,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 | User 도메인 | `domain/user/{entity,dto,repository,service,controller}/*` | OK (signup / login / social). 탈퇴·마이페이지는 Step 4 |
 | 헬스체크 | `global/controller/HealthController.java` | OK (`GET /health`) |
 | 설정 파일 | `application.yml` / `application-{local,prod}.yml` | OK (프로파일 분리, secret env 외부화, `aws.s3.*` 키 준비) |
-| 마이그레이션 | `db/migration/V1__init.sql`, `V2__add_social_login_fields.sql`, `V3__add_user_deleted_at.sql`, **`V4__fixed_schema.sql` (커밋됨, 통합 이슈 발견 — §1.5 참조)** | V1~V3 적용 검증 완료. **V4 는 fresh-DB 스타일 `CREATE TABLE` 모음으로 작성** 되어 있어 V1~V3 위에 그대로 적용 시 Flyway 실패. 통합 옵션은 §1.5 / `docs/spec/ai-server-contract.md §5.A~B`. |
+| 마이그레이션 | `db/migration/V1__init.sql` (= 구 V4 가 V1 자리로 이동, fixes 적용), `V2__add_social_login_fields.sql`, `V3__add_user_deleted_at.sql` | **2026-05-02 V1 ↔ V4 통합 완료**. 구 `V1__init.sql` 폐기 + 구 `V4__fixed_schema.sql` 폐기. 새 V1 이 구 V4 의 설계를 흡수 (BIGSERIAL, fridge 보존, V2 와 충돌하던 unique 제약 제거 등). V2/V3 는 그대로 ALTER 로 누적. |
 | 빌드 도구 | `build.gradle` | Flyway(core + pg) 추가됨 |
 | Recipe 도메인 | `domain/recipe/{entity,repository,service,controller,dto}/*` | OK (create/read/delete + stats 동기화). 임베딩·승인 흐름은 Step 6/7 |
 | 보조 유틸 | `global/auth/SecurityUtil`, `domain/user/support/AuthorDisplayName` | OK |
@@ -53,7 +53,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 
 ### 아직 없는 것 (= 만들어야 할 것)
 
-- **V4 마이그레이션 통합** (Step 1.5 — `V4__fixed_schema.sql` 은 작성됐으나 V1~V3 와 충돌. 옵션 선택 후 재작성/조정 필요)
+- ~~**V4 마이그레이션 통합**~~ — **2026-05-02 완료**. 옵션 (b) 변형 채택 (V1 폐기 + 구 V4 가 V1 자리로 이동, V2/V3 는 보존)
 - **Upload (S3 presigned URL) 실제 구현** (명세 있음. 코드는 AWS S3 준비 후 — Step 2-4b)
 - **Like / Scrap** (Step 3)
 - **User 마이페이지 / 탈퇴 익명화** (Step 4)
@@ -64,70 +64,69 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 
 ---
 
-## 1.5 V4 마이그레이션 — V1 보정본 (Step 1.5, **신규**)
+## 1.5 V1 ↔ V4 통합 — 완료 (2026-05-02)
 
-> **결정 (2026-05-02)**: V4 는 **V1 의 갱신된 버전**이다. V2 / V3 과는 무모순이지만, "V1 이 처음부터 이렇게 작성됐어야 할" 스키마를 V4 가 patch 형태로 수렴시킨다. 즉 V4 적용 후의 최종 스키마 = (이상적 V1) + V2 + V3.
+> **결정 (2026-05-02, 사용자 지시)**: 운영 미배포 단계이므로 V4 가 V1 자리를 **완전히** 차지한다. 구 V1 / 구 V4 를 모두 폐기하고, 새 V1 이 구 V4 의 설계를 흡수한다. V2 / V3 는 그대로 보존되어 ALTER 로 누적된다.
 >
-> **AI 서버 contract 검토 결과 (2026-05-02)**: `docs/api-1.json` (AI 서버 OpenAPI 0.1.0) 정독 후 갭 분석 → [`docs/spec/ai-server-contract.md`](spec/ai-server-contract.md) 에 표로 정리. V4 는 그 문서의 §5 "V4 에 포함" 항목만 다룬다. 합의가 필요한 큰 변경은 V5/V6 로 이연.
+> 이는 [`docs/changes/V4-integration-issues.md`](changes/V4-integration-issues.md) 의 **옵션 (b) 변형** 에 해당한다. 협업자별 로컬 DB 는 `docker compose down -v` 로 wipe 필요.
 
-### 왜 V1 을 직접 고치지 않고 V4 로 가는가
-- Flyway 의 적용 이력(`flyway_schema_history`) 무결성 때문에 이미 운영/검증 환경에 적용된 V1 의 **체크섬을 변경하면 안 된다**.
-- 신규 환경(DB 리셋 후)도 V1→V2→V3→V4 체인 한 번이면 동일한 최종 상태가 나오므로, "V4 가 V1 을 완전 대체" 한다는 표현은 **운영 의미상의 대체**(=이후 환경 구축 시 V1 의 부족분이 V4 로 메워짐) 로 해석한다.
+### 적용된 변경 요약
 
-### V4 의 실제 내용 — 사용자 작성본 (commit `48204b4`)
+| 항목 | Before | After |
+|---|---|---|
+| 마이그레이션 파일 | V1__init.sql + V2 + V3 + V4__fixed_schema.sql | **V1__init.sql (= 구 V4 + fixes) + V2 + V3** |
+| `users.user_id` 등 PK | `BIGSERIAL` (구 V1) / `SERIAL` (구 V4) | `BIGSERIAL` (JPA `Long` 정합) |
+| `users.password_hash` | NOT NULL (구 V1, V2 가 nullable 화) | nullable (V1 단계에서 이미 nullable, V2 는 no-op) |
+| `users.provider`/`provider_id` | V2 가 추가 | V1 이 이미 보유, V2 의 `IF NOT EXISTS` 가 no-op |
+| `uq_provider_provider_id` UNIQUE | V1 / V2 둘 중 한 곳에서 추가 | V2 에서 단독 추가 (V1 에서는 제외 → 중복 정의 충돌 회피) |
+| `users.is_active` | 없음 | V1 에 추가 (계정 활성/탈퇴 토글) |
+| `users.deleted_at` | V3 가 추가 | V3 그대로 유지 |
+| `recipes` 컬럼 | `full_content` + `source` + `status` + `ingredients` 등 (구 V1) | `description` + `content` + `ingredients{name,amount,unit,type,note}` + `ingredients_raw` + `instructions` + `servings` + `cooking_time` + `calories` + `difficulty` + `category` + `tags` + `tips` + `video_url` + `is_active` + `author_type` + `embedding` (AI contract 정합) |
+| `pending_recipes` | 없음 | **신규** — 사용자 제출 → 관리자 승인 → recipes 로 이동 |
+| `chat_messages` | 없음 (구 V1 은 `session_logs`) | **신규** — AI 의 per-message 모델 정합 |
+| `session_logs` | 있음 | **제거** |
+| `chat_rooms.room_id` | `VARCHAR(100)` (UUID) | `BIGSERIAL` (AI 응답 `room_id: integer` 정합) |
+| `user_profiles` | 없음 (구 V1 은 `users.preferences JSONB`) | **신규** — preferences 를 풍부한 컬럼으로 분리 |
+| `recipe_stats` 카운터 갱신 | 애플리케이션 코드 (RecipeStats.increment 등) | **DB 트리거** (`trigger_likes_count`, `trigger_scrap_count`). 추가로 `trigger_recipe_stats_create` 가 recipe INSERT 시 row(0,0) 자동 생성 |
+| `fridge` | V1 에 있음 | V1 에 보존 (구 V4 에서 누락됐던 것 복원) |
+| 인덱스 | 기본 | 추가: `idx_recipes_video_url` (PARTIAL), `idx_pending_recipes_user_id`, `idx_chat_messages_room_id`, 기타 |
 
-`V4__fixed_schema.sql` 은 fresh-DB 가정 하에 다음 테이블 9개 + 트리거 2개를 **`CREATE TABLE` 만으로** 정의한다:
+### 적용된 코드 변경 요약 (2026-05-02 동시 PR)
 
-| 테이블 | 비고 |
-|---|---|
-| `Users` | V1+V2 통합 + `is_active` 신설. **V3 의 `deleted_at` 누락**. |
-| `User_Profiles` | 신규. `preferences` 를 풍부하게 분리 (allergies / dietary_restrictions / preferred_* / cooking_skill / serving_size / ai_analyzed_at). |
-| `Recipes` | 신설. AI contract `RecipeResponse` 와 거의 1:1 (description, instructions, servings, cooking_time, calories, difficulty, category, tags, tips, content, video_url, image_url, is_active, author_type, embedding). **`status`/`source`/`full_content` 컬럼 없음**. |
-| `Pending_Recipes` | 신규. 사용자 업로드 → 승인 전 보관소. 승인 시 `Recipes` 로 이동. |
-| `Chat_Rooms` | `room_id SERIAL` (V1 의 VARCHAR(100) UUID 와 다름). `is_active` 토글로 소프트 삭제. |
-| `Chat_Messages` | 신규. AI 의 per-message 모델. `recipe_ids JSONB`. **V1 의 `session_logs` 는 V4 에서 미정의**. |
-| `Likes` / `Scraps` | V1 동일 + **트리거로 `Recipe_Stats` 자동 증감**. |
-| `Recipe_Stats` | V1 동일. |
-| (누락) `fridge` | V1 의 `fridge` 가 V4 에 미정의. Step 5 전제 사라짐. |
+- 엔티티
+  - `User`: `preferences` 제거, `isActive` / `deletedAt` 추가 → `UserProfile` 은 미구현 (DB 만 준비, 엔티티는 Step 4 마이페이지 시점)
+  - `Recipe`: 전면 재작성 — `source`/`status`/`fullContent` 폐기, `authorType` 신설, AI contract 의 11개 필드 모두 매핑
+  - `RecipeStats`: 카운터 increment/decrement 메서드 제거 (DB 트리거가 처리). row 자체도 `trigger_recipe_stats_create` 가 자동 생성
+  - 신규 `PendingRecipe` 엔티티 + `PendingRecipeRepository`
+  - `Ingredient` record: `{name, amount}` → `{name, amount, unit, type, note}` (AI `IngredientItem` 정합)
+- enum
+  - `RecipeSource` 폐기 → `RecipeAuthorType` (ADMIN/USER) 신설
+  - `RecipeStatus` 보존 — 이제 `PendingRecipe` 와 응답 DTO 에서만 사용
+- 서비스
+  - `RecipeService.create()` → `pending_recipes` INSERT
+  - `RecipeService.listMine()` → `pending_recipes` 조회. 응답 DTO 도 `PendingRecipeListResponse` 신규
+  - `RecipeService.listApproved()` → `recipes` 의 `is_active=true` 조회 (status 컬럼 없음)
+  - `RecipeService.detail()` → `recipes` 만. PENDING 분기 / RECIPE_NOT_APPROVED 제거
+  - `RecipeService.delete()` → 본인 `pending_recipe` hard delete (recipes 삭제는 admin Step 6)
+  - `RecipeStats` 트랜잭션 INSERT 코드 제거, `session_logs` 선행 NULL 처리 코드 제거
+- DTO 8개 갱신: `RecipeCreateRequest/Response`, `RecipeListItemResponse`, `RecipeDetailResponse`, 신규 `PendingRecipeListItemResponse`/`PendingRecipeListResponse`
+- ErrorCode: `RECIPE_NOT_APPROVED` 제거, `PENDING_RECIPE_NOT_FOUND` 추가
+- 빌드: `./gradlew build -x test` PASS
 
-### 통합 이슈 (해결 필요) — 상세는 [`docs/spec/ai-server-contract.md §5.A`](spec/ai-server-contract.md)
+### 후속 작업
 
-- 🔴 **P0 #1**: V1 위에 V4 적용 시 `relation "users" already exists` 로 Flyway 실패 — `IF NOT EXISTS`/`DROP` 없음
-- 🔴 **P0 #2**: V3 의 `users.deleted_at` 누락 (탈퇴 익명화 §5 결정 깨짐)
-- 🟠 **P1 #3**: V1 의 `fridge` 누락
-- 🔴 **P0 #5**: 타입 narrowing `BIGSERIAL → SERIAL` (BIGINT → INT) — JPA `Long` 매핑과 충돌
-- 🔴 **P0 #6**: `Recipe` 엔티티 (`full_content`/`source`/`status`) 와 V4 `Recipes` (`description`/`content`/`author_type`/`is_active`) 가 정면 충돌
-- 🔴 **P0 #7**: `User.preferences` 매핑 누락 (V4 가 `User_Profiles` 로 분리)
-- 🟡 **P2 #8**: `Pending_Recipes` 분리 설계 → `RecipeService.create()` 타깃 변경 필요
-- 🟠 **P1 #9**: V4 의 트리거 vs 우리 §6 Step 3-3 의 애플리케이션 카운터 증감 — **둘 다 동작하면 카운트 두 배**
-- 🟡 **P2 #4**: `session_logs` 가 V4 에 미정의 (좀비 테이블이 됨)
-
-### 다음 결정 (사용자 선택 필요)
-
-`docs/spec/ai-server-contract.md §5.B` 의 옵션 (a) / (b) / (c) 중 택 1 후 진행. 권장 순:
-
-1. **옵션 (a)** — V4 를 ALTER 기반으로 재작성 (운영 데이터 보존, 협업자 부담 최소)
-2. **옵션 (c)** — V4 앞에 `DROP TABLE IF EXISTS ... CASCADE` 프리픽스 추가 (dev/MVP 한정)
-3. **옵션 (b)** — V1/V2/V3 폐기 + V4 단일화 (history wipe 필요)
-
-### 작성 절차 (옵션 결정 후 갱신)
-
-- [x] 1.5-a. AI 서버 docs 정독 → 갭분석 산출 (`docs/spec/ai-server-contract.md`)
-- [x] 1.5-b. V4 1차 작성 (`V4__fixed_schema.sql`) — **단, §"통합 이슈" 12건으로 인해 재작업/조정 필요**
-- [ ] 1.5-b'. **옵션 (a/b/c) 결정 후 V4 재작성 또는 보강**
-- [ ] 1.5-c. `docker compose down -v && docker compose up -d && ./gradlew bootRun` 으로 V1~V4 체인 자동 적용 검증 (현재 적용 시 P0 #1 로 실패)
-- [ ] 1.5-d. `docs/db-testing-guide.md` 의 Flyway 기대값 표 갱신 (4행)
-- [x] 1.5-e. `README.md` 의 "V1~V3" 문구 갱신 (V1~V4)
-- [ ] 1.5-f. 본 문서 §1 인벤토리 / §6 Step 1 산출물 표시 갱신
-- [ ] 1.5-g. **엔티티·서비스·DTO·명세 동시 재작성** (이슈 #5~#9 해결):
-  - `User` (preferences 제거, is_active 추가) + `UserProfile` 신설
-  - `Recipe` 전면 재작성 (11개 필드 추가, source/status/full_content 제거, author_type 추가)
-  - `PendingRecipe` 신설 + `RecipeService.create()` 타깃 변경
-  - `RecipeStatus`/`RecipeSource` enum 폐기, `RecipeAuthorType` 신설
-  - `ChatMessage`/`ChatRoom` 엔티티 신설 (Step 5 전제)
-  - `RecipeStats` 카운터 증감 정책: **DB 트리거 단독** vs **애플리케이션 단독** vs **둘 다 (이중 증가 위험)** 선택
-  - `SPEC-20260422-02/03/04` 의 v2 명세 발행 (`SPEC-20260422-02-CL01` 메모 참조)
-- [ ] 1.5-h. AI 서버 팀과 미합의 항목 회의 (§5 보류 §"AI 서버 contract 미합의 항목")
+- [x] 1.5-a. AI 서버 docs 정독 → 갭분석 (`docs/spec/ai-server-contract.md`)
+- [x] 1.5-b. V4 1차 작성 → 통합 이슈 12건 발견 → 옵션 (b) 변형 채택 → V1 자리로 이동 + fixes
+- [x] 1.5-b'. ~~V4 재작성~~ — 본 PR 에서 V1 으로 흡수 완료
+- [ ] 1.5-c. **로컬 DB 재기동 검증**: `docker compose down -v && docker compose up -d && ./gradlew bootRun` 으로 V1→V2→V3 자동 적용 + Hibernate `validate` 통과 확인
+- [x] 1.5-d. `docs/db-testing-guide.md` Flyway 기대값 표 갱신 (V1~V3, V4 제거)
+- [x] 1.5-e. `README.md` 의 마이그레이션 문구 갱신 (V1~V3)
+- [x] 1.5-f. 본 문서 §1 인벤토리 갱신
+- [x] 1.5-g. 엔티티·서비스·DTO 갱신 — 위 "코드 변경 요약" 참조
+- [ ] 1.5-h. `SPEC-20260422-02/03/04` v2 명세 발행 (입력/응답 schema 가 V4 기반으로 바뀜) — change-log 메모는 이미 `docs/changes/SPEC-20260422-02-CL01.md`
+- [ ] 1.5-i. AI 서버 팀과 §5 보류 항목 합의 회의
+- [ ] 1.5-j. Step 6 (Admin 승인) 구현 시 `pending_recipes → recipes` 이동 트랜잭션 설계
+- [ ] 1.5-k. AI 서버가 우리 `recipes.embedding` 을 채우는 메커니즘 합의 (옵션 B 잠정)
 
 ---
 

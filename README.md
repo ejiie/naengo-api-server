@@ -86,11 +86,11 @@ docker compose exec postgres psql -U naengo -d naengo
 ### 스키마 완전 리셋
 
 ```bash
-docker compose down -v    # 볼륨까지 삭제 → 다음 기동 시 V1~V4 재적용
+docker compose down -v    # 볼륨까지 삭제 → 다음 기동 시 V1~V3 재적용
 docker compose up -d
 ```
 
-> V4 는 V1 의 보정본(=V1 이 처음부터 그렇게 작성됐어야 할 부족분 수렴). V2 / V3 와는 무모순. 자세한 결정 배경은 [`docs/api-server-tasks.md §1.5`](docs/api-server-tasks.md) 참조.
+> 2026-05-02 PR 에서 V1 이 새 스키마(구 V4 가 흡수) 로 재작성됨 → 기존 로컬 DB 가 있다면 반드시 위 명령으로 wipe 후 재기동. 자세한 결정 배경은 [`docs/api-server-tasks.md §1.5`](docs/api-server-tasks.md) 참조.
 
 ### 빌드 / 테스트
 
@@ -108,10 +108,10 @@ TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/signup \
   -d '{"email":"a@b.c","password":"pw123456","nickname":"tester"}' \
   | jq -r '.data.accessToken')
 
-# 레시피 작성
+# 레시피 작성 (사용자 제출 → pending_recipes)
 curl -s -X POST http://localhost:8080/api/recipes \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"title":"김치볶음밥","fullContent":"...","ingredients":[{"name":"김치","amount":"200g"}]}'
+  -d '{"title":"김치볶음밥","content":"1. 팬에 기름...\n2. 김치 볶기"}'
 
 # 목록
 curl -s http://localhost:8080/api/recipes
@@ -141,10 +141,9 @@ src/main/resources/
 ├── application-local.yml     로컬 기본값 (DB / secret 포함, 실 secret 은 env)
 ├── application-prod.yml      운영(env 필수)
 └── db/migration/
-    ├── V1__init.sql
+    ├── V1__init.sql                          (2026-05-02 재작성: 구 V4 의 AI contract 정합 설계 흡수)
     ├── V2__add_social_login_fields.sql
-    ├── V3__add_user_deleted_at.sql
-    └── V4__*.sql               (V1 보정본 — Step 1.5 에서 작성·적용)
+    └── V3__add_user_deleted_at.sql
 
 docs/
 ├── api-server-tasks.md       담당 범위·진행 현황·Step 순서

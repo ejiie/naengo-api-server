@@ -14,68 +14,69 @@ import java.time.ZonedDateTime;
 import java.util.List;
 
 /**
- * 승인된 레시피 (관리자가 게시 결정한 것). 사용자 제출 레시피는 PendingRecipe 에 별도 존재.
- * AI 서버 OpenAPI 의 RecipeResponse 와 1:1 매핑.
+ * 사용자 제출 레시피 (관리자 승인 → recipes 로 이동).
+ * 입력 단계에서는 자유 형식 content 만 필수, 나머지는 선택.
  */
 @Entity
-@Table(name = "recipes")
+@Table(name = "pending_recipes")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
-public class Recipe {
+public class PendingRecipe {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "recipe_id")
-    private Long recipeId;
+    @Column(name = "pending_recipe_id")
+    private Long pendingRecipeId;
+
+    @Column(name = "user_id", nullable = false)
+    private Long userId;
 
     @Column(nullable = false, length = 255)
     private String title;
 
-    @Column(columnDefinition = "TEXT", nullable = false)
+    @Column(columnDefinition = "TEXT")
     private String description;
 
+    @Column(columnDefinition = "TEXT", nullable = false)
+    private String content;
+
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb", nullable = false)
+    @Column(columnDefinition = "jsonb")
     private List<Ingredient> ingredients;
 
-    @Column(name = "ingredients_raw", columnDefinition = "TEXT", nullable = false)
+    @Column(name = "ingredients_raw", columnDefinition = "TEXT")
     private String ingredientsRaw;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb", nullable = false)
+    @Column(columnDefinition = "jsonb")
     private List<String> instructions;
 
-    @Column(nullable = false, precision = 4, scale = 1)
+    @Column(precision = 4, scale = 1)
     private BigDecimal servings;
 
-    @Column(name = "cooking_time", nullable = false)
+    @Column(name = "cooking_time")
     private Integer cookingTime;
 
     @Column
     private Integer calories;
 
-    /** "easy" / "normal" / "hard" — V1 CHECK 제약 참조 */
-    @Column(nullable = false, length = 10)
+    /** "easy" / "normal" / "hard" 또는 null */
+    @Column(length = 10)
     private String difficulty;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb", nullable = false)
+    @Column(columnDefinition = "jsonb")
     private List<String> category;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb", nullable = false)
-    @Builder.Default
-    private List<String> tags = List.of();
+    @Column(columnDefinition = "jsonb")
+    private List<String> tags;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb", nullable = false)
-    @Builder.Default
-    private List<String> tips = List.of();
-
-    @Column(columnDefinition = "TEXT")
-    private String content;
+    @Column(columnDefinition = "jsonb")
+    private List<String> tips;
 
     @Column(name = "video_url", length = 512)
     private String videoUrl;
@@ -88,23 +89,21 @@ public class Recipe {
     private boolean isActive = true;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "author_type", nullable = false, length = 20)
+    @Column(nullable = false, length = 20)
     @Builder.Default
-    private RecipeAuthorType authorType = RecipeAuthorType.ADMIN;
+    private RecipeStatus status = RecipeStatus.PENDING;
 
-    @Column(name = "author_id")
-    private Long authorId;
+    @Column(name = "admin_note", columnDefinition = "TEXT")
+    private String adminNote;
+
+    @Column(name = "reviewed_at")
+    private ZonedDateTime reviewedAt;
 
     @Column(name = "created_at", updatable = false)
     @Builder.Default
     private ZonedDateTime createdAt = ZonedDateTime.now();
 
-    // recipes.embedding 은 AI 서버가 관리. 엔티티에 매핑하지 않음 (validate 는 missing-from-entity 컬럼은 문제삼지 않음).
-
-    @OneToOne(mappedBy = "recipe", fetch = FetchType.LAZY)
-    private RecipeStats stats;
-
-    public void deactivate() {
+    public void cancel() {
         this.isActive = false;
     }
 }

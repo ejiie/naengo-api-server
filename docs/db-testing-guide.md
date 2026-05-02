@@ -29,90 +29,80 @@ docker compose exec postgres psql -U naengo -d naengo
 
 ---
 
-## 1. Flyway 마이그레이션이 V1 → V2 → V3 → V4 순으로 적용된다
+## 1. Flyway 마이그레이션이 V1 → V2 → V3 순으로 적용된다
 
 ```sql
 SELECT installed_rank, version, description, success
 FROM flyway_schema_history ORDER BY installed_rank;
 ```
 
-기대값 (V4 통합 이슈 해결 후):
+기대값:
 | rank | version | description              | success |
 |------|---------|--------------------------|---------|
 | 1    | 1       | init                     | t       |
 | 2    | 2       | add social login fields  | t       |
 | 3    | 3       | add user deleted at      | t       |
-| 4    | 4       | fixed schema             | t       |
 
-> V4 의 description 은 작성된 파일명(`V4__<설명>.sql`) 의 underscore 를 공백으로 치환한 값.
+> V1 은 2026-05-02 PR 에서 구 V4 (`V4__fixed_schema.sql`) 의 설계를 흡수해 재작성됨. 자세한 변경 내용은 [`api-server-tasks.md §1.5`](api-server-tasks.md). 협업자별 로컬 DB 는 `docker compose down -v` 로 wipe 필수 (이전 V1 의 체크섬과 다르므로).
 
-> ⚠️ **2026-05-02 현재 V4 통합 이슈로 자동 적용 불가**: 현 `V4__fixed_schema.sql` 은 fresh-DB 가정의 `CREATE TABLE` 모음이라 V1~V3 위에 적용하면 `relation "users" already exists` 로 실패. 자세한 옵션과 수정 방향은 [`api-server-tasks.md §1.5`](api-server-tasks.md) 와 [`docs/spec/ai-server-contract.md §5`](spec/ai-server-contract.md). 현재 검증 가능한 시나리오:
-> - V4 파일을 일시적으로 제거하고 V1~V3 만 적용 → 본 표의 1~3행
-> - 또는 옵션 (a/b/c) 중 하나 적용 후 본 표의 1~4행
-
-- [ ] V4 통합 후: 4건 모두 `success = true`
-- [ ] V4 미통합 (현 master 기준 일시 우회): V4 파일을 잠시 이동하고 1~3 행 모두 `success = true`
+- [ ] 3건 모두 `success = true`
+- [ ] V4 row 가 보이면 stale state — `docker compose down -v` 로 history wipe 후 재기동
 
 ---
 
 ## 2. 테이블 스키마가 의도대로 생성되었다
 
-V1~V3 만 적용된 상태:
 ```sql
 \d users
+\d user_profiles
 \d recipes
+\d pending_recipes
 \d recipe_stats
 \d scraps
 \d likes
 \d chat_rooms
-\d session_logs
-\d fridge
-```
-
-V4 통합 후 추가:
-```sql
-\d user_profiles
-\d pending_recipes
 \d chat_messages
-SELECT trigger_name FROM information_schema.triggers
- WHERE event_object_table IN ('likes','scraps');
--- trigger_likes_count / trigger_scrap_count 가 보여야 함
+\d fridge
+SELECT trigger_name, event_manipulation, event_object_table
+FROM information_schema.triggers
+ORDER BY event_object_table, trigger_name;
+-- trigger_likes_count / trigger_scrap_count / trigger_recipe_stats_create 가 보여야 함
 ```
 
-확인 포인트 (V1~V3):
+확인 포인트:
 - [ ] `users.provider` (VARCHAR(20) NOT NULL DEFAULT 'LOCAL')
-- [ ] `users.provider_id` (VARCHAR(255), UNIQUE 복합 제약 `uq_provider_provider_id`)
-- [ ] `users.deleted_at` (TIMESTAMPTZ NULL) — **V3 도입. V4 의 `Users` 정의에 누락되어 있어 통합 시 보존 필요**
+- [ ] `users.provider_id` (VARCHAR(255), UNIQUE 복합 제약 `uq_provider_provider_id` — V2 가 추가)
+- [ ] `users.deleted_at` (TIMESTAMPTZ NULL) — V3 가 추가
+- [ ] `users.is_active` (BOOLEAN NOT NULL DEFAULT TRUE)
+- [ ] `users.password_hash` 가 nullable (소셜 로그인용)
 - [ ] `recipes.embedding` (`vector(1536)` 타입)
 - [ ] `recipes.author_id` 가 `BIGINT REFERENCES users(user_id) ON DELETE SET NULL`
+- [ ] `recipes.author_type` (VARCHAR(20) CHECK ADMIN/USER, DEFAULT 'ADMIN')
+- [ ] `recipes.is_active` (BOOLEAN NOT NULL DEFAULT TRUE)
+- [ ] `recipes` 에 AI contract 정합 컬럼 11개:
+  - `description TEXT NOT NULL`
+  - `ingredients JSONB NOT NULL` (IngredientItem[])
+  - `ingredients_raw TEXT NOT NULL`
+  - `instructions JSONB NOT NULL` (string[])
+  - `servings NUMERIC(4,1) NOT NULL`
+  - `cooking_time INTEGER NOT NULL` (분)
+  - `calories INTEGER` (NULL 가능)
+  - `difficulty VARCHAR(10)` CHECK (`easy`/`normal`/`hard`)
+  - `category JSONB NOT NULL` (string[])
+  - `tags JSONB NOT NULL DEFAULT '[]'`
+  - `tips JSONB NOT NULL DEFAULT '[]'`
+  - `video_url VARCHAR(512)`
+- [ ] `recipes(video_url)` 부분 인덱스 (`WHERE video_url IS NOT NULL`)
+- [ ] `pending_recipes` 테이블 + `idx_pending_recipes_user_id` / `idx_pending_recipes_status`
+- [ ] `chat_messages` 테이블 (`role` CHECK `user`/`model`, `recipe_ids JSONB`)
+- [ ] `chat_rooms.room_id` 이 `BIGSERIAL` (구 V1 의 `VARCHAR(100)` 폐기 됨)
+- [ ] `user_profiles` 테이블 — `users.preferences` 가 컬럼별로 분리됨
 - [ ] `scraps`, `likes` 의 FK 가 `ON DELETE CASCADE`
-- [ ] **V4 적용 후**: `recipes` 에 다음 컬럼 존재 (`docs/spec/ai-server-contract.md §5`)
-  - `description` TEXT
-  - `ingredients_raw` TEXT
-  - `instructions` JSONB
-  - `servings` NUMERIC(4,1)
-  - `cooking_time` INTEGER
-  - `calories` INTEGER (NULL 가능)
-  - `difficulty` VARCHAR(10), CHECK 제약 (`easy`/`normal`/`hard`)
-  - `category` JSONB
-  - `tags` JSONB
-  - `tips` JSONB
-  - `video_url` VARCHAR(512)
-  - `recipes(video_url)` 부분 인덱스 (`WHERE video_url IS NOT NULL`)
-
-  확인 SQL:
+- [ ] DB 트리거 3종이 존재
   ```sql
-  \d recipes
-  SELECT indexname FROM pg_indexes WHERE tablename = 'recipes';
+  SELECT trigger_name FROM information_schema.triggers
+  WHERE trigger_name IN ('trigger_likes_count','trigger_scrap_count','trigger_recipe_stats_create');
   ```
-- [ ] `session_logs.selected_recipe_id` FK 의 `ON DELETE` 동작
-  - **V4 미적용**: `NO ACTION`. API 서버가 애플리케이션 단에서 NULL 처리 후 삭제 — §8 에서 검증.
-  - **V4 적용 후**: `SET NULL`. DB 단독으로도 정합. 애플리케이션 우회 코드는 그대로 유지(이중 안전). 확인 SQL:
-    ```sql
-    SELECT conname, confdeltype FROM pg_constraint
-    WHERE conrelid = 'session_logs'::regclass AND contype = 'f';
-    -- selected_recipe_id 의 confdeltype 이 'n' (= SET NULL) 이어야 함
-    ```
 
 ---
 
