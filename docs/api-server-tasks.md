@@ -41,7 +41,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 | JWT | `global/auth/JwtTokenProvider.java`, `JwtAuthenticationFilter.java`, `CustomUserDetailsService.java` | OK |
 | 예외 | `global/exception/{CustomException, GlobalExceptionHandler, ErrorCode}.java` | OK. 미사용 `ErrorCode` 는 **선언 시점에만 추가** 정책 도입 (ErrorCode.java 하단 주석 참조) |
 | OAuth | `global/auth/oauth/{Kakao,Google}OAuthClient.java`, `KakaoTokenClient.java`, `OAuthUserInfo.java`, `DevOAuthController.java` | OK |
-| User 도메인 | `domain/user/{entity,dto,repository,service,controller}/*` | OK (signup / login / social). 탈퇴·마이페이지는 Step 4 |
+| User 도메인 | `domain/user/{entity,dto,repository,service,controller}/*` | OK (signup / login / social) + **2026-05-03 Step 4 완료**: 마이페이지 조회/수정, 비밀번호 변경, 회원 탈퇴 익명화 (`UserMeService` / `UserMeController`) |
 | 헬스체크 | `global/controller/HealthController.java` | OK (`GET /health`) |
 | 설정 파일 | `application.yml` / `application-{local,prod}.yml` | OK (프로파일 분리, secret env 외부화, `aws.s3.*` 키 준비) |
 | 마이그레이션 | `db/migration/V1__init.sql` (= 구 V4 가 V1 자리로 이동, fixes 적용), `V2__add_social_login_fields.sql`, `V3__add_user_deleted_at.sql` | **2026-05-02 V1 ↔ V4 통합 완료**. 구 `V1__init.sql` 폐기 + 구 `V4__fixed_schema.sql` 폐기. 새 V1 이 구 V4 의 설계를 흡수 (BIGSERIAL, V2 와 충돌하던 unique 제약 제거 등). V2/V3 는 그대로 ALTER 로 누적. **`fridge` 테이블 폐기** (사용자 결정 2026-05-02). |
@@ -50,7 +50,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 | Like 도메인 | `domain/like/{entity,repository,service,controller,dto}/*` | **2026-05-03 신규 (Step 3)** — 토글 endpoint. 카운터는 DB 트리거 책임 |
 | Scrap 도메인 | `domain/scrap/{entity,repository,service,controller,dto}/*` | **2026-05-03 신규 (Step 3)** — 토글 + 본인 스크랩 목록. `RecipeListMapper` 재사용 |
 | 보조 유틸 | `global/auth/SecurityUtil`, `domain/user/support/AuthorDisplayName` | OK |
-| 명세서 | `docs/spec/recipe-{create,read,delete}.md` (v1, 보존), **`docs/spec/recipe-{create,read,delete}-v2.md`** (2026-05-02 V4 통합 후 신규), `docs/spec/upload-presigned-url.md`, `docs/spec/ai-server-contract.md` (AI 서버 OpenAPI 0.1.0 스냅샷·갭분석), **`docs/spec/like-toggle.md`**, **`docs/spec/scrap-toggle.md`**, **`docs/spec/scrap-list.md`** (2026-05-03 Step 3 신규) | OK |
+| 명세서 | `docs/spec/recipe-{create,read,delete}.md` (v1, 보존), **`docs/spec/recipe-{create,read,delete}-v2.md`** (2026-05-02 V4 통합 후 신규), `docs/spec/upload-presigned-url.md`, `docs/spec/ai-server-contract.md` (AI 서버 OpenAPI 0.1.0 스냅샷·갭분석), **`docs/spec/like-toggle.md`**, **`docs/spec/scrap-toggle.md`**, **`docs/spec/scrap-list.md`** (Step 3), **`docs/spec/user-me-{get,update}.md`**, **`docs/spec/user-password-change.md`**, **`docs/spec/user-withdraw.md`** (Step 4) | OK |
 | 로컬 개발 환경 | `docker-compose.yml` (pgvector/pg16) | OK |
 | 온보딩 / 가이드 | `README.md`, `docs/db-testing-guide.md` | OK |
 
@@ -59,7 +59,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 - ~~**V4 마이그레이션 통합**~~ — **2026-05-02 완료**. 옵션 (b) 변형 채택 (V1 폐기 + 구 V4 가 V1 자리로 이동, V2/V3 는 보존)
 - **Upload (S3 presigned URL) 실제 구현** (명세 있음. 코드는 AWS S3 준비 후 — Step 2-4b)
 - ~~**Like / Scrap** (Step 3)~~ — **2026-05-03 완료**
-- **User 마이페이지 / 탈퇴 익명화** (Step 4)
+- ~~**User 마이페이지 / 탈퇴 익명화** (Step 4)~~ — **2026-05-03 완료** (선호도 `user_profiles` 는 후속 PR)
 - **Chat (read-only)** (Step 5) — Fridge 는 폐기됨 (사용자 결정 2026-05-02)
 - **Admin 도메인** (Step 6)
 - **AI 서버 연동 모듈** (Step 7)
@@ -229,16 +229,16 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 2. [x] **Recipe_Stats** — 2026-05-02 V4 통합 시 DB 트리거로 자동 관리. 애플리케이션 직접 증감 없음
 3. [x] **Like** — 2026-05-03 완료. 토글식 `POST /api/recipes/{id}/like`. UNIQUE + `DataIntegrityViolationException` 흡수
 4. [x] **Scrap** — 2026-05-03 완료. 토글식 + `GET /api/scraps/my`
-5. [ ] **User 마이페이지**
-   - 내 정보 조회 / 수정 (닉네임)
-   - 선호도(JSONB) 조회 / 수정
-   - 비밀번호 변경 (LOCAL provider 한정)
-   - **회원 탈퇴 (익명화 방식, 결정 사항 §5 참고)**
-     * `DELETE /api/users/me` — 한 트랜잭션에서 처리
-     * PII 필드 nullify + `nickname = '탈퇴한 사용자_<user_id>'` + `is_blocked = true` + `deleted_at = now()`
-     * 본인의 `scraps`/`likes` 삭제, 해당 레시피들의 `recipe_stats` 카운터 감소
-     * `chat_rooms` / `session_logs` 삭제는 **AI 서버와 합의 후 결정** (현재 보류)
-     * 작성 레시피(`recipes.author_id`)는 유지, 표시 시점에 탈퇴 플래그로 닉네임 치환
+5. [x] **User 마이페이지** — 2026-05-03 완료
+   - [x] 내 정보 조회 / 닉네임 수정 (`UserMeService.getMe/updateMe`)
+   - [ ] 선호도(`user_profiles`) 조회 / 수정 — V4 에서 컬럼 분리됨. 별도 후속 PR (entity / repository / service 모두 신설 필요)
+   - [x] 비밀번호 변경 (LOCAL provider 한정, 소셜은 `SOCIAL_PASSWORD_NOT_ALLOWED`)
+   - [x] **회원 탈퇴 (익명화)**
+     * `DELETE /api/users/me` — 단일 트랜잭션
+     * PII nullify (`email`/`password_hash`/`provider_id` → NULL) + `nickname = '탈퇴한 사용자_<user_id>'` + `is_blocked = true` + `is_active = false` + `deleted_at = NOW()`
+     * 본인의 `scraps`/`likes`/`pending_recipes`/`user_profiles` 삭제. `recipe_stats` 카운터는 V1 의 likes/scraps DELETE 트리거가 자동 감소 (애플리케이션 보정 불필요)
+     * `chat_rooms`/`chat_messages` 삭제는 **AI 서버와 합의 후 결정** (보류)
+     * 작성 레시피(`recipes.author_id`)는 유지, 표시 시점에 닉네임 치환
 6. [ ] **Chat_Rooms / Session_Logs (조회 전용)**
    - 내 채팅방 목록
    - 특정 채팅방의 세션 로그 조회
@@ -378,7 +378,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 > | **즉시** | **Step 1.5 — V4 마이그레이션** (V1 보정본) | AI 서버 docs 와 스키마 정합부터 맞춰야 이후 Step 5/6/7 의 계약이 흔들리지 않는다. 본 PR / 본 브랜치(`claude/update-migrations-api-docs-7Y4fU`) 의 1차 산출물. |
 > | 1 | Step 7 일부 — **AI 서버 contract 검토 산출물** | docs URL 의 endpoint 표를 `docs/spec/ai-server-contract.md` 등으로 정리. 코드 작성보다 먼저. **Step 6 / Step 7 본 구현의 전제** 가 됨. |
 > | ~~2~~ | ~~Step 3 — Like / Scrap~~ | **2026-05-03 완료**. |
-> | 3 | Step 4 — User 마이페이지 / 탈퇴 | Step 3 결과(스크랩/좋아요 삭제 대상) 필요. |
+> | ~~3~~ | ~~Step 4 — User 마이페이지 / 탈퇴~~ | **2026-05-03 완료** (선호도 후속 PR). |
 > | 4 | Step 5 — Chat read-only | Fridge 폐기 (2026-05-02) 로 Chat 만 남음. |
 > | 5 | Step 6 — Admin (승인 흐름) | Step 7 의 임베딩 endpoint 가 명확해진 이후. |
 > | 6 | Step 7 본 구현 — AI 서버 클라이언트 | Step 1.5 와 "AI 서버 contract 검토 산출물" 완료 후. |
@@ -470,17 +470,36 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 
 ---
 
-### Step 4. User 마이페이지 + 회원 탈퇴(익명화)
+### Step 4. User 마이페이지 + 회원 탈퇴(익명화) — **완료 (2026-05-03)**
 의존: Step 1 (deleted_at 마이그레이션) + Step 3 (스크랩/좋아요 삭제 대상).
 
-- [ ] 4-1. 명세서 `docs/spec/user-me-get.md`, `docs/spec/user-me-update.md` 작성 → 구현 (닉네임·선호도)
-- [ ] 4-2. 명세서 `docs/spec/user-password-change.md` 작성 → 구현 (LOCAL provider 한정)
-- [ ] 4-3. 명세서 `docs/spec/user-withdraw.md` 작성 → 구현 (`DELETE /api/users/me`, 익명화 트랜잭션)
-  - PII nullify + `nickname = '탈퇴한 사용자_<user_id>'` + `is_blocked = true` + `deleted_at = now()`
-  - `scraps` / `likes` 삭제 + `recipe_stats` 카운터 보정
-  - `chat_rooms` / `session_logs` 삭제는 AI 서버 합의 전까지 **보류**
+- [x] 4-1. `docs/spec/user-me-get.md` (`SPEC-20260503-04`), `docs/spec/user-me-update.md` (`SPEC-20260503-05`) → 구현 (닉네임만)
+- [x] 4-2. `docs/spec/user-password-change.md` (`SPEC-20260503-06`) → 구현 (LOCAL 한정, 소셜은 `SOCIAL_PASSWORD_NOT_ALLOWED`)
+- [x] 4-3. `docs/spec/user-withdraw.md` (`SPEC-20260503-07`) → 구현 (`DELETE /api/users/me`, 단일 트랜잭션)
+  - PII nullify (`email` / `password_hash` / `provider_id` → NULL) + `nickname = '탈퇴한 사용자_<user_id>'` + `is_blocked = true` + `is_active = false` + `deleted_at = NOW()`
+  - `scraps` / `likes` / `pending_recipes` / `user_profiles` 삭제 — `recipe_stats` 카운터는 트리거 자동 감소
+  - `chat_rooms` / `chat_messages` 삭제는 AI 서버 합의 전까지 **보류**
 
-**산출물**: 명세서 4건, `domain/user/*` 확장
+**V1 후속 변경**:
+- `users.email` `NOT NULL` → nullable 로 완화 (익명화 시 NULL 처리하기 위해). UNIQUE 제약은 다중 NULL 허용으로 영향 없음
+- `User.email` 엔티티도 `nullable = false` 제거 (스키마와 정합)
+
+**산출물 (실제)**:
+- 명세서 4건 (`user-me-get`, `user-me-update`, `user-password-change`, `user-withdraw`)
+- `domain/user/dto/{UserMeResponse, UserUpdateRequest, PasswordChangeRequest}.java`
+- `domain/user/service/UserMeService.java`
+- `domain/user/controller/UserMeController.java`
+- `domain/user/entity/User.java` 확장 (`changeNickname`, `changePasswordHash`, `anonymize` 메서드)
+- `domain/like/repository/LikeRepository`, `domain/scrap/repository/ScrapRepository`, `domain/recipe/repository/PendingRecipeRepository` 에 `deleteAllByUserId` 추가
+- `ErrorCode` 에 `SOCIAL_PASSWORD_NOT_ALLOWED`, `ALREADY_WITHDRAWN` 추가
+
+**범위 밖 (후속 PR)**:
+- `user_profiles` 선호도 endpoint — V4 신설 테이블이지만 본 PR 은 entity / repository 미생성. `user_profiles` 의 풍부한 컬럼 (allergies / dietary_restrictions / preferred_* / cooking_skill / serving_size / ai_analyzed_at) 을 어떻게 노출할지 별도 spec 필요
+- 비밀번호 변경 시 기존 토큰 강제 무효화 (stateless JWT 한계)
+- 탈퇴 시 AI 서버 측 채팅 데이터 파기 동기화 (AI 팀 합의 보류)
+
+**알려진 동작**:
+- 탈퇴된 사용자가 살아있는 토큰으로 재호출 시: 명세상 409 `ALREADY_WITHDRAWN` 이지만 실제로는 `CustomUserDetailsService` 의 `is_blocked` 체크가 먼저 발화하여 **403** 이 떨어짐. 방어 in depth 로 수용 (사용자는 동일하게 차단됨)
 
 ---
 

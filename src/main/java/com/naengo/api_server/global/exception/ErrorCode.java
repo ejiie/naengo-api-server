@@ -20,6 +20,8 @@ public enum ErrorCode {
     EMAIL_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 사용 중인 이메일입니다."),
     NICKNAME_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 사용 중인 닉네임입니다."),
     USER_BLOCKED(HttpStatus.FORBIDDEN, "차단된 사용자입니다."),
+    SOCIAL_PASSWORD_NOT_ALLOWED(HttpStatus.FORBIDDEN, "소셜 로그인 사용자는 비밀번호를 변경할 수 없습니다."),
+    ALREADY_WITHDRAWN(HttpStatus.CONFLICT, "이미 탈퇴된 사용자입니다."),
 
     // ─── Recipe ──────────────────────────────────────────
     RECIPE_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 레시피입니다."),

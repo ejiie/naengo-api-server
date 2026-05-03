@@ -4,6 +4,7 @@ import com.naengo.api_server.domain.recipe.entity.PendingRecipe;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -15,4 +16,8 @@ public interface PendingRecipeRepository extends JpaRepository<PendingRecipe, Lo
            ORDER BY p.createdAt DESC
            """)
     Page<PendingRecipe> findActiveByUserOrderByLatest(@Param("userId") Long userId, Pageable pageable);
+
+    @Modifying
+    @Query("DELETE FROM PendingRecipe p WHERE p.userId = :userId")
+    int deleteAllByUserId(@Param("userId") Long userId);
 }

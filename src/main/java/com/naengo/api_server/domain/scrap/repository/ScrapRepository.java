@@ -17,6 +17,10 @@ public interface ScrapRepository extends JpaRepository<Scrap, Long> {
     @Query("DELETE FROM Scrap s WHERE s.userId = :userId AND s.recipeId = :recipeId")
     int deleteByUserIdAndRecipeId(@Param("userId") Long userId, @Param("recipeId") Long recipeId);
 
+    @Modifying
+    @Query("DELETE FROM Scrap s WHERE s.userId = :userId")
+    int deleteAllByUserId(@Param("userId") Long userId);
+
     /**
      * 본인 스크랩 목록 — 활성 레시피만, 스크랩한 시각의 내림차순.
      * Recipe 와 RecipeStats 를 fetch join 으로 N+1 방지.
