@@ -119,7 +119,13 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 - [x] 1.5-a. AI 서버 docs 정독 → 갭분석 (`docs/spec/ai-server-contract.md`)
 - [x] 1.5-b. V4 1차 작성 → 통합 이슈 12건 발견 → 옵션 (b) 변형 채택 → V1 자리로 이동 + fixes
 - [x] 1.5-b'. ~~V4 재작성~~ — 본 PR 에서 V1 으로 흡수 완료
-- [ ] 1.5-c. **로컬 DB 재기동 검증**: `docker compose down -v && docker compose up -d && ./gradlew bootRun` 으로 V1→V2→V3 자동 적용 + Hibernate `validate` 통과 확인
+- [x] 1.5-c. **로컬 DB 재기동 검증 — 완료 (2026-05-03)**: `docker compose down -v && docker compose up -d && ./gradlew bootRun` 으로 V1→V2→V3 자동 적용 + Hibernate `validate` 통과. 검증 항목:
+  - Flyway 3행 모두 `success = true` (V2 의 `provider`/`provider_id` IF NOT EXISTS 가 V1 와 충돌 없이 skip 되는 WARN 만 관측 — 정상)
+  - 테이블 10개 (`users`, `user_profiles`, `recipes`, `pending_recipes`, `recipe_stats`, `scraps`, `likes`, `chat_rooms`, `chat_messages`, `flyway_schema_history`) — `fridge` 부재 확인
+  - 트리거 3종 정상 동작: `trigger_recipe_stats_create` (recipes INSERT → stats(0,0) 자동), `trigger_likes_count` / `trigger_scrap_count` (INSERT/DELETE 시 카운터 ±1)
+  - `users` 컬럼 11개 (`is_active`, `deleted_at`, `provider`, `provider_id` 모두 존재. `password_hash` nullable 확인. `uq_provider_provider_id` UNIQUE 제약 V2 가 추가)
+  - `recipes` 컬럼 22개 (`description`, `instructions`, `servings`, `difficulty` CHECK, `tags`/`tips` DEFAULT `'[]'`, `is_active`, `author_type` CHECK, `embedding vector(1536)` 등 모두 존재)
+  - 엔드투엔드 스모크 테스트: `/health` UP → signup → login → `POST /api/recipes` (pendingRecipeId=1, status=PENDING) → `GET /api/recipes/my` (pending row 1건 정상 노출)
 - [x] 1.5-d. `docs/db-testing-guide.md` Flyway 기대값 표 갱신 (V1~V3, V4 제거)
 - [x] 1.5-e. `README.md` 의 마이그레이션 문구 갱신 (V1~V3)
 - [x] 1.5-f. 본 문서 §1 인벤토리 갱신
