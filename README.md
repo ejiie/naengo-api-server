@@ -5,7 +5,7 @@
 > 이 저장소만 읽고도 다른 팀원 도움 없이 로컬에서 기동할 수 있게 작성되어 있다.
 > 아키텍처·책임 분담·진행 상황은 **[`docs/api-server-tasks.md`](docs/api-server-tasks.md)** 를 우선 참고.
 > 기능별 상세 계약은 **[`docs/spec/`](docs/spec/)**, DB 동작 검증 방법은 **[`docs/db-testing-guide.md`](docs/db-testing-guide.md)**.
-> AI 서버 호출이 포함된 작업은 **[AI 서버 OpenAPI/Swagger](http://43.201.62.254:8000/docs)** 가 진실원본 — 명세 작성/코딩 전에 반드시 확인.
+> AI 서버 호출이 포함된 작업은 **[AI 서버 OpenAPI/Swagger](http://43.201.62.254:8000/docs)** 가 진실원본 — 명세 작성/코딩 전에 반드시 확인. 로컬 스냅샷은 [`docs/api-1.json`](docs/api-1.json) (네트워크 접근 불가 시 이 파일로 대체).
 
 ---
 

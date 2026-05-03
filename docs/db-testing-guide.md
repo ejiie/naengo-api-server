@@ -2,7 +2,7 @@
 
 > **위치**: Step 8 에서 JUnit 통합 테스트로 자동화하기 전, **수동으로** 돌려 확신을 얻기 위한 체크리스트.
 > **선결**: `docker compose up -d` 로 로컬 Postgres(pgvector) 가 기동 중이어야 한다.
-> **AI 서버 contract 가 닿는 테이블** (`recipes.embedding`, `chat_rooms`, `session_logs`) 의 검증 항목은 [AI 서버 OpenAPI](http://43.201.62.254:8000/docs) 와 대조하며 본다. 본 가이드의 기대값과 docs 가 어긋나면 docs 가 우선.
+> **AI 서버 contract 가 닿는 테이블** (`recipes.embedding`, `chat_rooms`, `chat_messages`) 의 검증 항목은 [AI 서버 OpenAPI](http://43.201.62.254:8000/docs) (로컬 스냅샷: [`api-1.json`](api-1.json)) 와 대조하며 본다. 본 가이드의 기대값과 docs 가 어긋나면 docs 가 우선.
 
 모든 커맨드는 저장소 루트에서 실행한다고 가정한다.
 
