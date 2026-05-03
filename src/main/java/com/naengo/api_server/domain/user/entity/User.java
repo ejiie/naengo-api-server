@@ -2,11 +2,8 @@ package com.naengo.api_server.domain.user.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 import java.time.ZonedDateTime;
-import java.util.Map;
 
 @Entity
 @Table(
@@ -41,18 +38,13 @@ public class User {
     @Builder.Default
     private String role = "USER";
 
+    @Column(name = "is_active", nullable = false)
+    @Builder.Default
+    private boolean isActive = true;
+
     @Column(name = "is_blocked", nullable = false)
     @Builder.Default
     private boolean isBlocked = false;
-
-    // Hibernate 7 네이티브 JSON 지원 (hypersistence-utils 불필요)
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb")
-    private Map<String, Object> preferences;
-
-    @Column(name = "created_at", updatable = false)
-    @Builder.Default
-    private ZonedDateTime createdAt = ZonedDateTime.now();
 
     // 소셜 로그인 제공자 (LOCAL / KAKAO / GOOGLE)
     @Enumerated(EnumType.STRING)
@@ -64,7 +56,14 @@ public class User {
     @Column(name = "provider_id", length = 255)
     private String providerId;
 
-    // 차단 상태 변경 (관리자용)
+    @Column(name = "created_at", updatable = false)
+    @Builder.Default
+    private ZonedDateTime createdAt = ZonedDateTime.now();
+
+    // V3 가 추가하는 컬럼. 탈퇴 익명화 시점에 NOW() 로 채워짐.
+    @Column(name = "deleted_at")
+    private ZonedDateTime deletedAt;
+
     public void block() {
         this.isBlocked = true;
     }
@@ -73,8 +72,7 @@ public class User {
         this.isBlocked = false;
     }
 
-    // 선호도 업데이트
-    public void updatePreferences(Map<String, Object> preferences) {
-        this.preferences = preferences;
+    public void deactivate() {
+        this.isActive = false;
     }
 }

@@ -1,14 +1,16 @@
 package com.naengo.api_server.domain.recipe.service;
 
+import com.naengo.api_server.domain.recipe.dto.PendingRecipeListItemResponse;
+import com.naengo.api_server.domain.recipe.dto.PendingRecipeListResponse;
 import com.naengo.api_server.domain.recipe.dto.RecipeCreateRequest;
 import com.naengo.api_server.domain.recipe.dto.RecipeCreateResponse;
 import com.naengo.api_server.domain.recipe.dto.RecipeDetailResponse;
 import com.naengo.api_server.domain.recipe.dto.RecipeListItemResponse;
 import com.naengo.api_server.domain.recipe.dto.RecipeListResponse;
+import com.naengo.api_server.domain.recipe.entity.PendingRecipe;
 import com.naengo.api_server.domain.recipe.entity.Recipe;
-import com.naengo.api_server.domain.recipe.entity.RecipeSource;
 import com.naengo.api_server.domain.recipe.entity.RecipeStats;
-import com.naengo.api_server.domain.recipe.entity.RecipeStatus;
+import com.naengo.api_server.domain.recipe.repository.PendingRecipeRepository;
 import com.naengo.api_server.domain.recipe.repository.RecipeRepository;
 import com.naengo.api_server.domain.user.entity.User;
 import com.naengo.api_server.domain.user.repository.UserRepository;
@@ -16,7 +18,6 @@ import com.naengo.api_server.domain.user.support.AuthorDisplayName;
 import com.naengo.api_server.global.auth.SecurityUtil;
 import com.naengo.api_server.global.exception.CustomException;
 import com.naengo.api_server.global.exception.ErrorCode;
-import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
@@ -37,64 +38,100 @@ public class RecipeService {
     private static final int MAX_PAGE_SIZE = 50;
 
     private final RecipeRepository recipeRepository;
+    private final PendingRecipeRepository pendingRecipeRepository;
     private final UserRepository userRepository;
-    private final EntityManager entityManager;
 
     @Value("${aws.s3.public-url-prefix:}")
     private String s3PublicUrlPrefix;
 
+    /**
+     * 사용자 레시피 제출 → pending_recipes 테이블에 INSERT.
+     * 승인되어 recipes 로 옮겨지는 흐름은 Step 6 (Admin) 책임.
+     */
     @Transactional
-    public RecipeCreateResponse create(Long authorId, RecipeCreateRequest request) {
+    public RecipeCreateResponse create(Long userId, RecipeCreateRequest request) {
         validateImageUrl(request.imageUrl());
 
-        Recipe recipe = Recipe.builder()
+        PendingRecipe pending = PendingRecipe.builder()
+                .userId(userId)
                 .title(request.title())
-                .fullContent(request.fullContent())
-                .imageUrl(request.imageUrl())
-                .source(RecipeSource.USER)
-                .status(RecipeStatus.PENDING)
-                .authorId(authorId)
+                .description(request.description())
+                .content(request.content())
                 .ingredients(request.ingredients())
+                .ingredientsRaw(request.ingredientsRaw())
+                .instructions(request.instructions())
+                .servings(request.servings())
+                .cookingTime(request.cookingTime())
+                .calories(request.calories())
+                .difficulty(request.difficulty())
+                .category(request.category())
+                .tags(request.tags())
+                .tips(request.tips())
+                .videoUrl(request.videoUrl())
+                .imageUrl(request.imageUrl())
                 .build();
-        Recipe saved = recipeRepository.save(recipe);
 
-        // recipe_stats 를 같은 트랜잭션에서 INSERT (0,0)
-        entityManager.persist(new RecipeStats(saved));
-
-        return new RecipeCreateResponse(saved.getRecipeId(), saved.getStatus());
+        PendingRecipe saved = pendingRecipeRepository.save(pending);
+        return new RecipeCreateResponse(saved.getPendingRecipeId(), saved.getStatus());
     }
 
+    /**
+     * 공개 목록: recipes 테이블의 is_active=true 만.
+     */
     @Transactional(readOnly = true)
     public RecipeListResponse listApproved(int page, int size, String sort) {
         Pageable pageable = PageRequest.of(Math.max(0, page), clampSize(size));
         Page<Recipe> result = switch (sort == null ? "latest" : sort) {
-            case "popular" -> recipeRepository.findByStatusOrderByPopular(RecipeStatus.APPROVED, pageable);
-            case "latest"  -> recipeRepository.findByStatusOrderByLatest(RecipeStatus.APPROVED, pageable);
+            case "popular" -> recipeRepository.findActiveOrderByPopular(pageable);
+            case "latest"  -> recipeRepository.findActiveOrderByLatest(pageable);
             default        -> throw new CustomException(ErrorCode.INVALID_INPUT);
         };
         return toListResponse(result);
     }
 
+    /**
+     * 내가 제출한 레시피 (pending_recipes 의 모든 상태).
+     */
     @Transactional(readOnly = true)
-    public RecipeListResponse listMine(int page, int size) {
+    public PendingRecipeListResponse listMine(int page, int size) {
         Long userId = requireCurrentUserId();
         Pageable pageable = PageRequest.of(Math.max(0, page), clampSize(size));
-        Page<Recipe> result = recipeRepository.findByAuthorIdOrderByLatest(userId, pageable);
-        return toListResponse(result);
+        Page<PendingRecipe> result =
+                pendingRecipeRepository.findActiveByUserOrderByLatest(userId, pageable);
+
+        List<PendingRecipeListItemResponse> items = result.getContent().stream()
+                .map(p -> new PendingRecipeListItemResponse(
+                        p.getPendingRecipeId(),
+                        p.getTitle(),
+                        p.getDescription(),
+                        p.getImageUrl(),
+                        p.getStatus(),
+                        p.getAdminNote(),
+                        p.getReviewedAt(),
+                        p.getCreatedAt()
+                ))
+                .collect(Collectors.toList());
+
+        return new PendingRecipeListResponse(
+                items,
+                result.getNumber(),
+                result.getSize(),
+                result.getTotalElements(),
+                result.getTotalPages()
+        );
     }
 
+    /**
+     * 단건 조회: recipes 테이블에서만 (승인된 것만 노출).
+     * 본인의 pending 은 listMine() 에서 확인.
+     */
     @Transactional(readOnly = true)
     public RecipeDetailResponse detail(Long recipeId) {
         Recipe recipe = recipeRepository.findById(recipeId)
                 .orElseThrow(() -> new CustomException(ErrorCode.RECIPE_NOT_FOUND));
 
-        if (recipe.getStatus() != RecipeStatus.APPROVED) {
-            Long me = SecurityUtil.currentUserIdOrNull();
-            boolean isAuthor = me != null && me.equals(recipe.getAuthorId());
-            boolean isAdmin = SecurityUtil.hasRole("ADMIN");
-            if (!isAuthor && !isAdmin) {
-                throw new CustomException(ErrorCode.RECIPE_NOT_APPROVED);
-            }
+        if (!recipe.isActive()) {
+            throw new CustomException(ErrorCode.RECIPE_NOT_FOUND);
         }
 
         String nickname = resolveNickname(recipe.getAuthorId());
@@ -105,34 +142,42 @@ public class RecipeService {
         return new RecipeDetailResponse(
                 recipe.getRecipeId(),
                 recipe.getTitle(),
-                recipe.getFullContent(),
+                recipe.getDescription(),
+                recipe.getIngredients(),
+                recipe.getIngredientsRaw(),
+                recipe.getInstructions(),
+                recipe.getServings(),
+                recipe.getCookingTime(),
+                recipe.getCalories(),
+                recipe.getDifficulty(),
+                recipe.getCategory(),
+                recipe.getTags(),
+                recipe.getTips(),
+                recipe.getContent(),
+                recipe.getVideoUrl(),
                 recipe.getImageUrl(),
-                recipe.getSource(),
-                recipe.getStatus(),
+                recipe.getAuthorType(),
                 recipe.getAuthorId(),
                 nickname,
-                recipe.getIngredients(),
                 likes,
                 scraps,
                 recipe.getCreatedAt()
         );
     }
 
+    /**
+     * 본인 제출 레시피 삭제 (pending_recipes hard delete).
+     * 승인된 recipes 의 삭제는 별도 admin endpoint (Step 6) 책임.
+     */
     @Transactional
-    public void delete(Long recipeId) {
+    public void delete(Long pendingRecipeId) {
         Long userId = requireCurrentUserId();
-        Recipe recipe = recipeRepository.findById(recipeId)
-                .orElseThrow(() -> new CustomException(ErrorCode.RECIPE_NOT_FOUND));
-        if (!userId.equals(recipe.getAuthorId())) {
+        PendingRecipe pending = pendingRecipeRepository.findById(pendingRecipeId)
+                .orElseThrow(() -> new CustomException(ErrorCode.PENDING_RECIPE_NOT_FOUND));
+        if (!userId.equals(pending.getUserId())) {
             throw new CustomException(ErrorCode.FORBIDDEN);
         }
-
-        // session_logs.selected_recipe_id 가 이 레시피를 가리키면 FK 충돌 → 먼저 NULL 처리
-        entityManager.createNativeQuery(
-                "UPDATE session_logs SET selected_recipe_id = NULL WHERE selected_recipe_id = :id"
-        ).setParameter("id", recipeId).executeUpdate();
-
-        recipeRepository.delete(recipe);
+        pendingRecipeRepository.delete(pending);
     }
 
     // ─── 내부 유틸 ─────────────────────────────────────────
@@ -148,7 +193,8 @@ public class RecipeService {
                 .toList();
         Map<Long, String> nicknameMap = new HashMap<>();
         if (!authorIds.isEmpty()) {
-            userRepository.findAllById(authorIds).forEach(u -> nicknameMap.put(u.getUserId(), u.getNickname()));
+            userRepository.findAllById(authorIds)
+                    .forEach(u -> nicknameMap.put(u.getUserId(), u.getNickname()));
         }
 
         List<RecipeListItemResponse> items = content.stream().map(r -> {
@@ -159,9 +205,12 @@ public class RecipeService {
             return new RecipeListItemResponse(
                     r.getRecipeId(),
                     r.getTitle(),
+                    r.getDescription(),
                     r.getImageUrl(),
                     AuthorDisplayName.of(raw),
-                    r.getStatus(),
+                    r.getAuthorType(),
+                    r.getDifficulty(),
+                    r.getCookingTime(),
                     likes,
                     scraps,
                     r.getCreatedAt()

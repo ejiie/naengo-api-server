@@ -23,7 +23,7 @@ public enum ErrorCode {
 
     // ─── Recipe ──────────────────────────────────────────
     RECIPE_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 레시피입니다."),
-    RECIPE_NOT_APPROVED(HttpStatus.FORBIDDEN, "승인되지 않은 레시피입니다."),
+    PENDING_RECIPE_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 제출 레시피입니다."),
 
     // ─── Common ──────────────────────────────────────────
     INVALID_INPUT(HttpStatus.BAD_REQUEST, "입력값이 올바르지 않습니다."),
