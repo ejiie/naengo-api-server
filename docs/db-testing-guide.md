@@ -62,7 +62,6 @@ FROM flyway_schema_history ORDER BY installed_rank;
 \d likes
 \d chat_rooms
 \d chat_messages
-\d fridge
 SELECT trigger_name, event_manipulation, event_object_table
 FROM information_schema.triggers
 ORDER BY event_object_table, trigger_name;

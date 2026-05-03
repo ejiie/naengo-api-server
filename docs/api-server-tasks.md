@@ -16,7 +16,7 @@
 API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 정본(source of truth)을 관리하며, AI 서버와 신뢰 가능한 채널로 통신하는 백엔드"** 다.
 즉, 다음 세 가지가 핵심 책임이다.
 
-1. **DB I/O 관리** — Users / Recipes / Scraps / Likes / Recipe_Stats / Fridge 등 정형 데이터의 CRUD를 단독 소유.
+1. **DB I/O 관리** — Users / Recipes / Pending_Recipes / Scraps / Likes / Recipe_Stats / Chat_Rooms / Chat_Messages / User_Profiles 등 정형 데이터의 CRUD를 단독 소유.
 2. **인증/인가** — 자체 회원가입·소셜 로그인 → JWT 발급 → AI 서버까지 전달되는 토큰 체계의 출발점.
 3. **AI 서버와의 통신** — 사용자 요청을 AI 서버에 위임하고, AI 서버가 만든 결과(추천 결과 / 임베딩 등)를 다시 DB에 반영.
 
@@ -43,11 +43,11 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 | User 도메인 | `domain/user/{entity,dto,repository,service,controller}/*` | OK (signup / login / social). 탈퇴·마이페이지는 Step 4 |
 | 헬스체크 | `global/controller/HealthController.java` | OK (`GET /health`) |
 | 설정 파일 | `application.yml` / `application-{local,prod}.yml` | OK (프로파일 분리, secret env 외부화, `aws.s3.*` 키 준비) |
-| 마이그레이션 | `db/migration/V1__init.sql` (= 구 V4 가 V1 자리로 이동, fixes 적용), `V2__add_social_login_fields.sql`, `V3__add_user_deleted_at.sql` | **2026-05-02 V1 ↔ V4 통합 완료**. 구 `V1__init.sql` 폐기 + 구 `V4__fixed_schema.sql` 폐기. 새 V1 이 구 V4 의 설계를 흡수 (BIGSERIAL, fridge 보존, V2 와 충돌하던 unique 제약 제거 등). V2/V3 는 그대로 ALTER 로 누적. |
+| 마이그레이션 | `db/migration/V1__init.sql` (= 구 V4 가 V1 자리로 이동, fixes 적용), `V2__add_social_login_fields.sql`, `V3__add_user_deleted_at.sql` | **2026-05-02 V1 ↔ V4 통합 완료**. 구 `V1__init.sql` 폐기 + 구 `V4__fixed_schema.sql` 폐기. 새 V1 이 구 V4 의 설계를 흡수 (BIGSERIAL, V2 와 충돌하던 unique 제약 제거 등). V2/V3 는 그대로 ALTER 로 누적. **`fridge` 테이블 폐기** (사용자 결정 2026-05-02). |
 | 빌드 도구 | `build.gradle` | Flyway(core + pg) 추가됨 |
 | Recipe 도메인 | `domain/recipe/{entity,repository,service,controller,dto}/*` | OK (create/read/delete + stats 동기화). 임베딩·승인 흐름은 Step 6/7 |
 | 보조 유틸 | `global/auth/SecurityUtil`, `domain/user/support/AuthorDisplayName` | OK |
-| 명세서 | `docs/spec/recipe-{create,read,delete}.md`, `docs/spec/upload-presigned-url.md`, `docs/spec/ai-server-contract.md` (2026-05-02 신설, AI 서버 OpenAPI 0.1.0 스냅샷·갭분석) | OK |
+| 명세서 | `docs/spec/recipe-{create,read,delete}.md` (v1, 보존), **`docs/spec/recipe-{create,read,delete}-v2.md`** (2026-05-02 V4 통합 후 신규), `docs/spec/upload-presigned-url.md`, `docs/spec/ai-server-contract.md` (AI 서버 OpenAPI 0.1.0 스냅샷·갭분석) | OK |
 | 로컬 개발 환경 | `docker-compose.yml` (pgvector/pg16) | OK |
 | 온보딩 / 가이드 | `README.md`, `docs/db-testing-guide.md` | OK |
 
@@ -57,7 +57,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 - **Upload (S3 presigned URL) 실제 구현** (명세 있음. 코드는 AWS S3 준비 후 — Step 2-4b)
 - **Like / Scrap** (Step 3)
 - **User 마이페이지 / 탈퇴 익명화** (Step 4)
-- **Fridge / Chat (read-only)** (Step 5)
+- **Chat (read-only)** (Step 5) — Fridge 는 폐기됨 (사용자 결정 2026-05-02)
 - **Admin 도메인** (Step 6)
 - **AI 서버 연동 모듈** (Step 7)
 - **통합 테스트 / 운영 준비** (Step 8) — `DemoApplicationTests` 는 `com.example.demo` 패키지에 있어 현재 컨텍스트 로딩 불가, Step 8 에서 재배치·재작성
@@ -88,7 +88,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 | `chat_rooms.room_id` | `VARCHAR(100)` (UUID) | `BIGSERIAL` (AI 응답 `room_id: integer` 정합) |
 | `user_profiles` | 없음 (구 V1 은 `users.preferences JSONB`) | **신규** — preferences 를 풍부한 컬럼으로 분리 |
 | `recipe_stats` 카운터 갱신 | 애플리케이션 코드 (RecipeStats.increment 등) | **DB 트리거** (`trigger_likes_count`, `trigger_scrap_count`). 추가로 `trigger_recipe_stats_create` 가 recipe INSERT 시 row(0,0) 자동 생성 |
-| `fridge` | V1 에 있음 | V1 에 보존 (구 V4 에서 누락됐던 것 복원) |
+| `fridge` | V1 에 있음 | **폐기** (2026-05-02 사용자 결정 — Fridge 도메인 자체 미실현) |
 | 인덱스 | 기본 | 추가: `idx_recipes_video_url` (PARTIAL), `idx_pending_recipes_user_id`, `idx_chat_messages_room_id`, 기타 |
 
 ### 적용된 코드 변경 요약 (2026-05-02 동시 PR)
@@ -123,7 +123,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 - [x] 1.5-e. `README.md` 의 마이그레이션 문구 갱신 (V1~V3)
 - [x] 1.5-f. 본 문서 §1 인벤토리 갱신
 - [x] 1.5-g. 엔티티·서비스·DTO 갱신 — 위 "코드 변경 요약" 참조
-- [ ] 1.5-h. `SPEC-20260422-02/03/04` v2 명세 발행 (입력/응답 schema 가 V4 기반으로 바뀜) — change-log 메모는 이미 `docs/changes/SPEC-20260422-02-CL01.md`
+- [x] 1.5-h. ~~`SPEC-20260422-02/03/04` v2 명세 발행~~ — **2026-05-02 완료**. `docs/spec/recipe-{create,read,delete}-v2.md` (`SPEC-20260502-02/03/04`)
 - [ ] 1.5-i. AI 서버 팀과 §5 보류 항목 합의 회의
 - [ ] 1.5-j. Step 6 (Admin 승인) 구현 시 `pending_recipes → recipes` 이동 트랜잭션 설계
 - [ ] 1.5-k. AI 서버가 우리 `recipes.embedding` 을 채우는 메커니즘 합의 (옵션 B 잠정)
@@ -189,7 +189,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
     | `recipes.embedding` | **AI** | AI (RAG 검색) | API |
     | `recipe_stats`, `scraps`, `likes` | API | API | API |
     | `chat_rooms`, `session_logs` | **AI** | API, AI | API |
-    | `fridge` | API | API, AI | API |
+    | ~~`fridge`~~ | ~~API~~ | ~~API, AI~~ | ~~API~~ — **2026-05-02 폐기** |
   - MVP 에서는 양 서버가 **같은 DB role** 공유. 운영 안정화 후 별도 role 로 권한 최소화 검토(예: AI 서버 role 은 `users` UPDATE 불가).
 
 ### Phase 1. 기반 정리 — **완료 (Step 1, 2026-04-22)**
@@ -240,9 +240,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
    - 내 채팅방 목록
    - 특정 채팅방의 세션 로그 조회
    - **쓰기는 AI 서버가 담당 (위 Phase 0 합의 기준)**
-7. [ ] **Fridge**
-   - 추가 / 조회 / 삭제
-   - "사진 업로드 → 재료 추출" 자체는 AI 서버 책임. API 서버는 추출 결과를 받아 저장만.
+7. ~~**Fridge**~~ — **2026-05-02 폐기**. 도메인 자체 미실현. AI 서버가 채팅 컨텍스트로 재료를 직접 받아 처리하므로 별도 영속 저장 불필요.
 8. [ ] **Admin**
    - 관리자 로그인 (User.role=ADMIN 으로 분기, 별도 로그인 화면은 프론트 책임)
    - 레시피 승인/반려 (PENDING → APPROVED/REJECTED)
@@ -289,9 +287,25 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 - ❌ LLM 프롬프트 엔지니어링 (= AI 서버)
 - ❌ 챗봇 대화 상태 머신 (= AI 서버, API 서버는 결과만 저장)
 - ❌ 프론트엔드 화면, 소셜 로그인 SDK 호출 (= 프론트)
-- ❌ 카카오/구글에서 access token 받기까지 (= 프론트가 받아 API 서버에 전달)
+
+> **2026-05-02 갱신**: 기존 "❌ 카카오/구글에서 access token 받기까지" 항목 삭제.
+> 코드 상으로 `KakaoTokenClient` (인가 코드 → 액세스 토큰 교환), `KakaoOAuthClient` / `GoogleOAuthClient` (액세스 토큰 → 사용자 정보) 가 이미 API 서버에 존재하므로 경계선 기술이 잘못됐음. 합의된 흐름:
+> 1. 프론트가 카카오/구글 SDK 또는 redirect 로 **인가 코드** 또는 **액세스 토큰** 을 획득
+> 2. API 서버가 (필요 시) 인가 코드 → 액세스 토큰 교환 (`KakaoTokenClient`)
+> 3. API 서버가 제공자 API 호출로 사용자 정보 조회 (`*OAuthClient`)
+> 4. 자체 JWT 발급 → **HttpOnly 쿠키로 프론트와 주고받음** (Phase 0-1 갱신, 아래 §"인증 흐름 갱신" 참조)
 
 내가 하는 건: **그 결과물을 받아 검증·저장·재가공하고, 다시 정형화된 응답으로 내보내는 것**.
+
+### 인증 흐름 갱신 (2026-05-02 합의)
+
+기존 Phase 0-1 의 `Authorization: Bearer <JWT>` 만 사용하던 방안이, **JWT 를 HttpOnly Cookie 로 주고받기** 로 합의 변경됨:
+
+- 자체 로그인 / 소셜 로그인 모두 응답에서 `Set-Cookie: <jwt_cookie_name>=<JWT>; HttpOnly; Secure; SameSite=Lax/Strict; Path=/` 로 발급
+- 프론트는 별도 토큰 저장소(localStorage 등) 를 쓰지 않고 브라우저가 자동으로 쿠키 동봉
+- API 서버의 `JwtAuthenticationFilter` 는 `Authorization` 헤더 외에 쿠키도 읽도록 확장 필요 (추후 PR)
+- 모바일 앱 호환은 별도 합의 필요 (모바일은 Cookie 가 어색하므로 헤더도 병행 지원)
+- AI 서버와의 secret 공유 정책은 그대로 유지 (양쪽 다 같은 secret 으로 JWT 검증)
 
 ---
 
@@ -362,7 +376,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 > | 1 | Step 7 일부 — **AI 서버 contract 검토 산출물** | docs URL 의 endpoint 표를 `docs/spec/ai-server-contract.md` 등으로 정리. 코드 작성보다 먼저. **Step 6 / Step 7 본 구현의 전제** 가 됨. |
 > | 2 | Step 3 — Like / Scrap | Recipe 도메인 완성도 끝맺기. AI 서버 의존 없음. |
 > | 3 | Step 4 — User 마이페이지 / 탈퇴 | Step 3 결과(스크랩/좋아요 삭제 대상) 필요. |
-> | 4 | Step 5 — Fridge / Chat read-only | **Chat 의 read 모델이 V4 에서 결정될 가능성** 이 있어 Step 1.5 후로 미룸. |
+> | 4 | Step 5 — Chat read-only | Fridge 폐기 (2026-05-02) 로 Chat 만 남음. |
 > | 5 | Step 6 — Admin (승인 흐름) | Step 7 의 임베딩 endpoint 가 명확해진 이후. |
 > | 6 | Step 7 본 구현 — AI 서버 클라이언트 | Step 1.5 와 "AI 서버 contract 검토 산출물" 완료 후. |
 > | 7 | Step 2-4b — Upload 실 구현 | AWS S3 버킷 준비 시점에. 변동 없음. |
@@ -393,7 +407,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 
 상세 결정·후보 항목은 §1.5 참조. 요약:
 
-- [ ] 1.5-1. AI 서버 OpenAPI/Swagger (<http://43.201.62.254:8000/docs>) 정독 → `recipes` / `chat_rooms` / `session_logs` / `users` / `fridge` 와의 컬럼·타입·참조 정합 점검
+- [ ] 1.5-1. AI 서버 OpenAPI/Swagger (<http://43.201.62.254:8000/docs>) 정독 → `recipes` / `chat_rooms` / `chat_messages` / `users` 와의 컬럼·타입·참조 정합 점검
 - [ ] 1.5-2. 점검 결과를 `docs/spec/ai-server-contract.md` (신규, 임시) 에 표 형태로 캡처 — endpoint 목록 + 우리 DB 와 닿는 모델만
 - [ ] 1.5-3. 정합되지 않는 항목을 `V4__correct_initial_schema.sql` 로 작성 (또는 더 좁은 이름으로 분할)
   - 알려진 첫 항목: `session_logs.selected_recipe_id` 에 `ON DELETE SET NULL` 부여 (`docs/spec/recipe-delete.md §4-5` 메모)
@@ -459,14 +473,13 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 
 ---
 
-### Step 5. Fridge + Chat (read-only)
-의존: Step 4 완료 (사용자 컨텍스트 정비 후).
+### Step 5. Chat (read-only)
+의존: Step 4 완료 (사용자 컨텍스트 정비 후). **Fridge 폐기 (2026-05-02)** 로 본 Step 의 범위는 Chat 만.
 
-- [ ] 5-1. 명세서 `docs/spec/fridge-crud.md` → 구현 (추가·조회·삭제)
-- [ ] 5-2. 명세서 `docs/spec/chat-room-list.md`, `docs/spec/chat-session-get.md` → 구현 (read-only)
-- [ ] 5-3. 채팅방 숨김 토글 (`is_active=false`) — 필요 여부 확인 후 결정
+- [ ] 5-1. 명세서 `docs/spec/chat-room-list.md`, `docs/spec/chat-message-list.md` → 구현 (read-only)
+- [ ] 5-2. 채팅방 숨김 토글 (`is_active=false`) — AI 서버의 `DELETE /api/v1/chat/rooms/{room_id}` 와 권한 책임 합의 후
 
-**산출물**: 명세서 2~3건, `domain/fridge/*`, `domain/chat/*` (read-only)
+**산출물**: 명세서 2건, `domain/chat/*` (read-only)
 
 ---
 

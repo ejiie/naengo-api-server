@@ -232,16 +232,3 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER trigger_scrap_count
 AFTER INSERT OR DELETE ON scraps
 FOR EACH ROW EXECUTE FUNCTION update_scrap_count();
-
--- ──────────────────────────────────────────────────────────
--- fridge (사용자 냉장고 재료. 구 V1 의 동일 테이블)
--- ──────────────────────────────────────────────────────────
-CREATE TABLE fridge (
-    id              BIGSERIAL    PRIMARY KEY,
-    user_id         BIGINT       NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    ingredient_name VARCHAR(100) NOT NULL,
-    amount          VARCHAR(50),
-    added_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX idx_fridge_user_id ON fridge(user_id);

@@ -102,9 +102,9 @@
 
 ## 6. 명세서에 미치는 영향
 
-- `SPEC-20260422-02` (recipe-create) — 본 PR 으로 입력 schema 가 광범위하게 바뀜. v2 명세 발행 필요. `SPEC-20260422-02-CL01` 메모 보강 필요 (옵션 (b) 채택 명시)
-- `SPEC-20260422-03` (recipe-read) — 응답 필드 다수 추가. v2 발행 필요
-- `SPEC-20260422-04` (recipe-delete) — 의미 변경 (recipes 본인 삭제 → pending_recipes 본인 삭제). v2 발행 필요
+- `SPEC-20260422-02` (recipe-create) → **v2 발행 완료**: [`docs/spec/recipe-create-v2.md`](../spec/recipe-create-v2.md) (`SPEC-20260502-02`)
+- `SPEC-20260422-03` (recipe-read) → **v2 발행 완료**: [`docs/spec/recipe-read-v2.md`](../spec/recipe-read-v2.md) (`SPEC-20260502-03`)
+- `SPEC-20260422-04` (recipe-delete) → **v2 발행 완료**: [`docs/spec/recipe-delete-v2.md`](../spec/recipe-delete-v2.md) (`SPEC-20260502-04`)
 - `SPEC-20260422-05` (upload presigned URL) — 영향 없음
 
 ---
