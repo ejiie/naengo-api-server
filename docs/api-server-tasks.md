@@ -46,9 +46,11 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 | 설정 파일 | `application.yml` / `application-{local,prod}.yml` | OK (프로파일 분리, secret env 외부화, `aws.s3.*` 키 준비) |
 | 마이그레이션 | `db/migration/V1__init.sql` (= 구 V4 가 V1 자리로 이동, fixes 적용), `V2__add_social_login_fields.sql`, `V3__add_user_deleted_at.sql` | **2026-05-02 V1 ↔ V4 통합 완료**. 구 `V1__init.sql` 폐기 + 구 `V4__fixed_schema.sql` 폐기. 새 V1 이 구 V4 의 설계를 흡수 (BIGSERIAL, V2 와 충돌하던 unique 제약 제거 등). V2/V3 는 그대로 ALTER 로 누적. **`fridge` 테이블 폐기** (사용자 결정 2026-05-02). |
 | 빌드 도구 | `build.gradle` | Flyway(core + pg) 추가됨 |
-| Recipe 도메인 | `domain/recipe/{entity,repository,service,controller,dto}/*` | OK (create/read/delete + stats 동기화). 임베딩·승인 흐름은 Step 6/7 |
+| Recipe 도메인 | `domain/recipe/{entity,repository,service,controller,dto,support}/*` | OK (create→pending_recipes, read→recipes, delete→pending). `RecipeListMapper` 가 `Page<Recipe>` → `RecipeListResponse` 매핑을 공유 |
+| Like 도메인 | `domain/like/{entity,repository,service,controller,dto}/*` | **2026-05-03 신규 (Step 3)** — 토글 endpoint. 카운터는 DB 트리거 책임 |
+| Scrap 도메인 | `domain/scrap/{entity,repository,service,controller,dto}/*` | **2026-05-03 신규 (Step 3)** — 토글 + 본인 스크랩 목록. `RecipeListMapper` 재사용 |
 | 보조 유틸 | `global/auth/SecurityUtil`, `domain/user/support/AuthorDisplayName` | OK |
-| 명세서 | `docs/spec/recipe-{create,read,delete}.md` (v1, 보존), **`docs/spec/recipe-{create,read,delete}-v2.md`** (2026-05-02 V4 통합 후 신규), `docs/spec/upload-presigned-url.md`, `docs/spec/ai-server-contract.md` (AI 서버 OpenAPI 0.1.0 스냅샷·갭분석) | OK |
+| 명세서 | `docs/spec/recipe-{create,read,delete}.md` (v1, 보존), **`docs/spec/recipe-{create,read,delete}-v2.md`** (2026-05-02 V4 통합 후 신규), `docs/spec/upload-presigned-url.md`, `docs/spec/ai-server-contract.md` (AI 서버 OpenAPI 0.1.0 스냅샷·갭분석), **`docs/spec/like-toggle.md`**, **`docs/spec/scrap-toggle.md`**, **`docs/spec/scrap-list.md`** (2026-05-03 Step 3 신규) | OK |
 | 로컬 개발 환경 | `docker-compose.yml` (pgvector/pg16) | OK |
 | 온보딩 / 가이드 | `README.md`, `docs/db-testing-guide.md` | OK |
 
@@ -56,7 +58,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 
 - ~~**V4 마이그레이션 통합**~~ — **2026-05-02 완료**. 옵션 (b) 변형 채택 (V1 폐기 + 구 V4 가 V1 자리로 이동, V2/V3 는 보존)
 - **Upload (S3 presigned URL) 실제 구현** (명세 있음. 코드는 AWS S3 준비 후 — Step 2-4b)
-- **Like / Scrap** (Step 3)
+- ~~**Like / Scrap** (Step 3)~~ — **2026-05-03 완료**
 - **User 마이페이지 / 탈퇴 익명화** (Step 4)
 - **Chat (read-only)** (Step 5) — Fridge 는 폐기됨 (사용자 결정 2026-05-02)
 - **Admin 도메인** (Step 6)
@@ -224,15 +226,9 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
    - 본인 작성 레시피 삭제
    - **수정 API 없음** (정책 확정: 영구 불가. 오탈자도 삭제 후 재작성)
    - 응답 DTO 에서 작성자 닉네임은 `users.nickname` 을 그대로 쓰되, 탈퇴 사용자(`deleted_at IS NOT NULL`)는 `"탈퇴한 사용자"` 로 치환
-2. [ ] **Recipe_Stats**
-   - Recipe 와 1:1, 좋아요/스크랩 수 캐시
-   - Like / Scrap 트랜잭션에서 같이 증감
-3. [ ] **Like**
-   - 토글식: POST /api/recipes/{id}/like 한 번에 좋아요/취소
-   - 중복 방지는 DB UNIQUE + 애플리케이션 처리
-4. [ ] **Scrap**
-   - 토글식
-   - 사용자 스크랩 목록 조회
+2. [x] **Recipe_Stats** — 2026-05-02 V4 통합 시 DB 트리거로 자동 관리. 애플리케이션 직접 증감 없음
+3. [x] **Like** — 2026-05-03 완료. 토글식 `POST /api/recipes/{id}/like`. UNIQUE + `DataIntegrityViolationException` 흡수
+4. [x] **Scrap** — 2026-05-03 완료. 토글식 + `GET /api/scraps/my`
 5. [ ] **User 마이페이지**
    - 내 정보 조회 / 수정 (닉네임)
    - 선호도(JSONB) 조회 / 수정
@@ -381,7 +377,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 > |---|---|---|
 > | **즉시** | **Step 1.5 — V4 마이그레이션** (V1 보정본) | AI 서버 docs 와 스키마 정합부터 맞춰야 이후 Step 5/6/7 의 계약이 흔들리지 않는다. 본 PR / 본 브랜치(`claude/update-migrations-api-docs-7Y4fU`) 의 1차 산출물. |
 > | 1 | Step 7 일부 — **AI 서버 contract 검토 산출물** | docs URL 의 endpoint 표를 `docs/spec/ai-server-contract.md` 등으로 정리. 코드 작성보다 먼저. **Step 6 / Step 7 본 구현의 전제** 가 됨. |
-> | 2 | Step 3 — Like / Scrap | Recipe 도메인 완성도 끝맺기. AI 서버 의존 없음. |
+> | ~~2~~ | ~~Step 3 — Like / Scrap~~ | **2026-05-03 완료**. |
 > | 3 | Step 4 — User 마이페이지 / 탈퇴 | Step 3 결과(스크랩/좋아요 삭제 대상) 필요. |
 > | 4 | Step 5 — Chat read-only | Fridge 폐기 (2026-05-02) 로 Chat 만 남음. |
 > | 5 | Step 6 — Admin (승인 흐름) | Step 7 의 임베딩 endpoint 가 명확해진 이후. |
@@ -454,15 +450,23 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 
 ---
 
-### Step 3. Engagement (Like, Scrap)
+### Step 3. Engagement (Like, Scrap) — **완료 (2026-05-03)**
 의존: Step 2 완료.
 
-- [ ] 3-1. 명세서 `docs/spec/like-toggle.md` 작성 → 구현 (`POST /api/recipes/{id}/like` 토글)
-- [ ] 3-2. 명세서 `docs/spec/scrap-toggle.md` + `docs/spec/scrap-list.md` 작성 → 구현
-- [ ] 3-3. Like/Scrap 트랜잭션 안에서 `recipe_stats.likes_count` / `scrap_count` 증감
-- [ ] 3-4. 동시성: `recipe_stats` UPDATE 에 낙관적 락 또는 `SELECT ... FOR UPDATE` 중 택 1
+- [x] 3-1. 명세서 `docs/spec/like-toggle.md` (`SPEC-20260503-01`) → 구현 (`POST /api/recipes/{id}/like` 토글)
+- [x] 3-2. 명세서 `docs/spec/scrap-toggle.md` (`SPEC-20260503-02`) + `docs/spec/scrap-list.md` (`SPEC-20260503-03`) → 구현
+- [x] ~~3-3. Like/Scrap 트랜잭션 안에서 `recipe_stats.likes_count` / `scrap_count` 증감~~ — **폐기**: V1 의 DB 트리거(`trigger_likes_count`, `trigger_scrap_count`) 가 단독 책임. 애플리케이션은 `entityManager.flush()` 후 재조회로 카운트만 읽음
+- [x] ~~3-4. 동시성: `recipe_stats` UPDATE 에 낙관적 락 또는 `SELECT ... FOR UPDATE` 중 택 1~~ — **폐기**: 트리거가 atomic UPDATE 로 처리. race condition 안전망은 `(user_id, recipe_id)` UNIQUE 제약 + `DataIntegrityViolationException` 흡수
 
-**산출물**: 명세서 3건, `domain/like/*`, `domain/scrap/*`
+**산출물 (실제)**:
+- 명세서 3건 (`like-toggle`, `scrap-toggle`, `scrap-list`)
+- `domain/like/{entity,repository,service,controller,dto}/*` (Like, LikeRepository, LikeService, LikeController, LikeToggleResponse)
+- `domain/scrap/{entity,repository,service,controller,dto}/*` (Scrap, ScrapRepository, ScrapService, ScrapController, ScrapToggleResponse)
+- `domain/recipe/support/RecipeListMapper` 신규 — `Page<Recipe>` → `RecipeListResponse` 매핑을 RecipeService 와 ScrapService 가 공유 (N+1 방지 + 작성자 닉네임 일괄 조회 패턴)
+- 검증: 빌드 + 로컬 docker 부팅 + 토글 3회 왕복(0→1→0→1) + `/api/scraps/my` 정상 노출 + 401/404 에러 케이스 확인
+
+**알려진 미흡**:
+- 인증 없이 보호 endpoint 호출 시 응답이 401 이 아닌 **403** 으로 떨어짐 (Spring Security 의 기본 동작; `AuthenticationEntryPoint` 미구현). 명세 §3.3 은 401 로 적혀 있으나 현 동작은 403. 별도 PR 에서 entry point 추가 필요.
 
 ---
 
