@@ -27,6 +27,9 @@ public enum ErrorCode {
     RECIPE_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 레시피입니다."),
     PENDING_RECIPE_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 제출 레시피입니다."),
 
+    // ─── Chat ────────────────────────────────────────────
+    CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 채팅방입니다."),
+
     // ─── Common ──────────────────────────────────────────
     INVALID_INPUT(HttpStatus.BAD_REQUEST, "입력값이 올바르지 않습니다."),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 내부 오류가 발생했습니다.");

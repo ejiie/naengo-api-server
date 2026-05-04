@@ -49,8 +49,9 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 | Recipe 도메인 | `domain/recipe/{entity,repository,service,controller,dto,support}/*` | OK (create→pending_recipes, read→recipes, delete→pending). `RecipeListMapper` 가 `Page<Recipe>` → `RecipeListResponse` 매핑을 공유 |
 | Like 도메인 | `domain/like/{entity,repository,service,controller,dto}/*` | **2026-05-03 신규 (Step 3)** — 토글 endpoint. 카운터는 DB 트리거 책임 |
 | Scrap 도메인 | `domain/scrap/{entity,repository,service,controller,dto}/*` | **2026-05-03 신규 (Step 3)** — 토글 + 본인 스크랩 목록. `RecipeListMapper` 재사용 |
+| Chat 도메인 | `domain/chat/{entity,repository,service,controller,dto}/*` | **2026-05-03 신규 (Step 5)** — read-only. AI 서버가 primary writer. 채팅방 목록 + 메시지 조회 |
 | 보조 유틸 | `global/auth/SecurityUtil`, `domain/user/support/AuthorDisplayName` | OK |
-| 명세서 | `docs/spec/recipe-{create,read,delete}.md` (v1, 보존), **`docs/spec/recipe-{create,read,delete}-v2.md`** (2026-05-02 V4 통합 후 신규), `docs/spec/upload-presigned-url.md`, `docs/spec/ai-server-contract.md` (AI 서버 OpenAPI 0.1.0 스냅샷·갭분석), **`docs/spec/like-toggle.md`**, **`docs/spec/scrap-toggle.md`**, **`docs/spec/scrap-list.md`** (Step 3), **`docs/spec/user-me-{get,update}.md`**, **`docs/spec/user-password-change.md`**, **`docs/spec/user-withdraw.md`** (Step 4) | OK |
+| 명세서 | `docs/spec/recipe-{create,read,delete}.md` (v1, 보존), **`docs/spec/recipe-{create,read,delete}-v2.md`** (2026-05-02 V4 통합 후 신규), `docs/spec/upload-presigned-url.md`, `docs/spec/ai-server-contract.md` (AI 서버 OpenAPI 0.1.0 스냅샷·갭분석), **`docs/spec/like-toggle.md`**, **`docs/spec/scrap-toggle.md`**, **`docs/spec/scrap-list.md`** (Step 3), **`docs/spec/user-me-{get,update}.md`**, **`docs/spec/user-password-change.md`**, **`docs/spec/user-withdraw.md`** (Step 4), **`docs/spec/chat-{room,message}-list.md`** (Step 5) | OK |
 | 로컬 개발 환경 | `docker-compose.yml` (pgvector/pg16) | OK |
 | 온보딩 / 가이드 | `README.md`, `docs/db-testing-guide.md` | OK |
 
@@ -60,7 +61,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 - **Upload (S3 presigned URL) 실제 구현** (명세 있음. 코드는 AWS S3 준비 후 — Step 2-4b)
 - ~~**Like / Scrap** (Step 3)~~ — **2026-05-03 완료**
 - ~~**User 마이페이지 / 탈퇴 익명화** (Step 4)~~ — **2026-05-03 완료** (선호도 `user_profiles` 는 후속 PR)
-- **Chat (read-only)** (Step 5) — Fridge 는 폐기됨 (사용자 결정 2026-05-02)
+- ~~**Chat (read-only)** (Step 5)~~ — **2026-05-03 완료** (5-2 채팅방 숨김 토글은 AI 서버 합의 후 별도 PR)
 - **Admin 도메인** (Step 6)
 - **AI 서버 연동 모듈** (Step 7)
 - **통합 테스트 / 운영 준비** (Step 8) — `DemoApplicationTests` 는 `com.example.demo` 패키지에 있어 현재 컨텍스트 로딩 불가, Step 8 에서 재배치·재작성
@@ -239,10 +240,11 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
      * 본인의 `scraps`/`likes`/`pending_recipes`/`user_profiles` 삭제. `recipe_stats` 카운터는 V1 의 likes/scraps DELETE 트리거가 자동 감소 (애플리케이션 보정 불필요)
      * `chat_rooms`/`chat_messages` 삭제는 **AI 서버와 합의 후 결정** (보류)
      * 작성 레시피(`recipes.author_id`)는 유지, 표시 시점에 닉네임 치환
-6. [ ] **Chat_Rooms / Session_Logs (조회 전용)**
-   - 내 채팅방 목록
-   - 특정 채팅방의 세션 로그 조회
-   - **쓰기는 AI 서버가 담당 (위 Phase 0 합의 기준)**
+6. [x] **Chat (read-only)** — 2026-05-03 완료. V4 통합 후 `chat_rooms` + `chat_messages` (구 `session_logs` 폐기, AI per-message 모델 정합)
+   - [x] 내 채팅방 목록 (`GET /api/chat/rooms`, `is_active=true`, `updated_at DESC`)
+   - [x] 특정 채팅방 메시지 시간순 (`GET /api/chat/rooms/{roomId}/messages`)
+     · `recipe_ids` → 활성 `RecipeListItemResponse` 일괄 매핑 (N+1 방지). 비활성 레시피는 응답에서 제외
+   - [x] **쓰기는 AI 서버가 담당** (Phase 0 합의 그대로)
 7. ~~**Fridge**~~ — **2026-05-02 폐기**. 도메인 자체 미실현. AI 서버가 채팅 컨텍스트로 재료를 직접 받아 처리하므로 별도 영속 저장 불필요.
 8. [ ] **Admin**
    - 관리자 로그인 (User.role=ADMIN 으로 분기, 별도 로그인 화면은 프론트 책임)
@@ -379,7 +381,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 > | 1 | Step 7 일부 — **AI 서버 contract 검토 산출물** | docs URL 의 endpoint 표를 `docs/spec/ai-server-contract.md` 등으로 정리. 코드 작성보다 먼저. **Step 6 / Step 7 본 구현의 전제** 가 됨. |
 > | ~~2~~ | ~~Step 3 — Like / Scrap~~ | **2026-05-03 완료**. |
 > | ~~3~~ | ~~Step 4 — User 마이페이지 / 탈퇴~~ | **2026-05-03 완료** (선호도 후속 PR). |
-> | 4 | Step 5 — Chat read-only | Fridge 폐기 (2026-05-02) 로 Chat 만 남음. |
+> | ~~4~~ | ~~Step 5 — Chat read-only~~ | **2026-05-03 완료**. 5-2 (채팅방 숨김 토글) 은 AI 서버 합의 후 별도 PR. |
 > | 5 | Step 6 — Admin (승인 흐름) | Step 7 의 임베딩 endpoint 가 명확해진 이후. |
 > | 6 | Step 7 본 구현 — AI 서버 클라이언트 | Step 1.5 와 "AI 서버 contract 검토 산출물" 완료 후. |
 > | 7 | Step 2-4b — Upload 실 구현 | AWS S3 버킷 준비 시점에. 변동 없음. |
@@ -503,13 +505,39 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 
 ---
 
-### Step 5. Chat (read-only)
-의존: Step 4 완료 (사용자 컨텍스트 정비 후). **Fridge 폐기 (2026-05-02)** 로 본 Step 의 범위는 Chat 만.
+### Step 5. Chat (read-only) — **완료 (2026-05-03)**
+의존: Step 4 완료. **Fridge 폐기 (2026-05-02)** 로 본 Step 의 범위는 Chat 만.
 
-- [ ] 5-1. 명세서 `docs/spec/chat-room-list.md`, `docs/spec/chat-message-list.md` → 구현 (read-only)
-- [ ] 5-2. 채팅방 숨김 토글 (`is_active=false`) — AI 서버의 `DELETE /api/v1/chat/rooms/{room_id}` 와 권한 책임 합의 후
+- [x] 5-1. `docs/spec/chat-room-list.md` (`SPEC-20260503-08`), `docs/spec/chat-message-list.md` (`SPEC-20260503-09`) → 구현 (read-only)
+- [ ] 5-2. 채팅방 숨김 토글 (`is_active=false`) — **보류**: AI 서버의 `DELETE /api/v1/chat/rooms/{room_id}` 와 권한 책임 합의 후 별도 PR
 
-**산출물**: 명세서 2건, `domain/chat/*` (read-only)
+**산출물 (실제)**:
+- 명세서 2건 (`chat-room-list`, `chat-message-list`)
+- `domain/chat/{entity,repository,service,controller,dto}/*`
+  - `ChatRoom`, `ChatMessage` 엔티티 (read-only — INSERT/UPDATE/DELETE 코드 없음)
+  - `ChatRoomRepository.findActiveByUserOrderByLatestUpdated`
+  - `ChatMessageRepository.findByRoomIdOrderByCreatedAt`
+  - `ChatService.listMyRooms`, `listMessages` (권한 검증 + recipe lookup 일괄 처리)
+  - `ChatController` — `GET /api/chat/rooms`, `GET /api/chat/rooms/{roomId}/messages`
+  - DTO: `ChatRoomListItemResponse` (AI `ChatRoomResponse` 정합), `ChatRoomListResponse`, `ChatMessageResponse`, `ChatMessageListResponse`
+- `RecipeRepository.findActiveByIds(Collection<Long>)` 추가 (메시지의 recipe_ids 일괄 조회 + JOIN FETCH stats)
+- `RecipeListMapper.toItems(List<Recipe>)` 추가 (페이지 래퍼 없는 단순 리스트 매핑 — 채팅 메시지의 recipes 필드용)
+- `ErrorCode` 에 `CHAT_ROOM_NOT_FOUND` 추가
+
+**검증**:
+- 빌드 PASS, docker + bootRun 부팅 OK
+- 스모크 테스트:
+  · 본인 활성 채팅방 2건 정렬 (`updated_at DESC`) ✓
+  · 메시지 목록 — `recipes` 필드 정확 매핑 (활성 1건만, 비활성 1건 제외) ✓
+  · 추천 없는 메시지 → `recipes: null` ✓
+  · 다른 사용자 채팅방 접근 → 403 FORBIDDEN ✓
+  · 본인 비활성 채팅방 → 404 CHAT_ROOM_NOT_FOUND ✓
+  · 존재하지 않는 roomId → 404 ✓
+
+**알려진 동작 / 후속**:
+- 본 PR 은 read-only. 5-2 (`PATCH /api/chat/rooms/{id}/visibility` 같은 형태) 은 AI 서버 권한 / DELETE endpoint 책임 합의 후
+- 메시지 페이징 미적용 (한 채팅방 메시지 < 100 가정). 큰 채팅방 케이스가 생기면 cursor 페이징 도입
+- 비활성 레시피 placeholder 표시 (예: "삭제된 레시피") 미적용 — UX 결정 시 추가
 
 ---
 

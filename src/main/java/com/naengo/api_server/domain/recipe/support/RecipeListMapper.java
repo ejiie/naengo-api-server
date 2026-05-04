@@ -17,9 +17,14 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
- * Page&lt;Recipe&gt; → RecipeListResponse 매핑.
- * RecipeService.listApproved 와 ScrapService.listMine 가 공유.
+ * Recipe → RecipeListItemResponse 매핑.
  * 작성자 닉네임은 일괄 조회로 N+1 방지.
+ *
+ * <p>두 형태 노출:
+ * <ul>
+ *   <li>{@link #toResponse(Page)} — Page&lt;Recipe&gt; → 페이징 응답 (RecipeService.listApproved / ScrapService.listMine)</li>
+ *   <li>{@link #toItems(List)} — List&lt;Recipe&gt; → 단순 리스트 (ChatService.listMessages 의 메시지별 추천 매핑)</li>
+ * </ul>
  */
 @Component
 @RequiredArgsConstructor
@@ -28,9 +33,20 @@ public class RecipeListMapper {
     private final UserRepository userRepository;
 
     public RecipeListResponse toResponse(Page<Recipe> page) {
-        List<Recipe> content = page.getContent();
+        List<RecipeListItemResponse> items = toItems(page.getContent());
+        return new RecipeListResponse(
+                items,
+                page.getNumber(),
+                page.getSize(),
+                page.getTotalElements(),
+                page.getTotalPages()
+        );
+    }
 
-        List<Long> authorIds = content.stream()
+    public List<RecipeListItemResponse> toItems(List<Recipe> recipes) {
+        if (recipes.isEmpty()) return List.of();
+
+        List<Long> authorIds = recipes.stream()
                 .map(Recipe::getAuthorId)
                 .filter(Objects::nonNull)
                 .distinct()
@@ -42,7 +58,7 @@ public class RecipeListMapper {
                     .forEach(u -> nicknameMap.put(u.getUserId(), u.getNickname()));
         }
 
-        List<RecipeListItemResponse> items = content.stream().map(r -> {
+        return recipes.stream().map(r -> {
             RecipeStats s = r.getStats();
             int likes = s == null ? 0 : s.getLikesCount();
             int scraps = s == null ? 0 : s.getScrapCount();
@@ -61,13 +77,5 @@ public class RecipeListMapper {
                     r.getCreatedAt()
             );
         }).collect(Collectors.toList());
-
-        return new RecipeListResponse(
-                items,
-                page.getNumber(),
-                page.getSize(),
-                page.getTotalElements(),
-                page.getTotalPages()
-        );
     }
 }
