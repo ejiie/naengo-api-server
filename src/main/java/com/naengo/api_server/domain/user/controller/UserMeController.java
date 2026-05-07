@@ -2,6 +2,8 @@ package com.naengo.api_server.domain.user.controller;
 
 import com.naengo.api_server.domain.user.dto.PasswordChangeRequest;
 import com.naengo.api_server.domain.user.dto.UserMeResponse;
+import com.naengo.api_server.domain.user.dto.UserPreferencesResponse;
+import com.naengo.api_server.domain.user.dto.UserPreferencesUpdateRequest;
 import com.naengo.api_server.domain.user.dto.UserUpdateRequest;
 import com.naengo.api_server.domain.user.service.UserMeService;
 import com.naengo.api_server.global.auth.SecurityUtil;
@@ -45,6 +47,19 @@ public class UserMeController {
     public ResponseEntity<Void> withdraw() {
         userMeService.withdraw(currentUserId());
         return ResponseEntity.noContent().build();
+    }
+
+    /** 선호도 조회 (`SPEC-20260504-04`). */
+    @GetMapping("/profile")
+    public ResponseEntity<ApiResponse<UserPreferencesResponse>> getPreferences() {
+        return ResponseEntity.ok(ApiResponse.ok(userMeService.getPreferences(currentUserId())));
+    }
+
+    /** 선호도 갱신 — 직접 입력 영역만 (`SPEC-20260504-05`). */
+    @PutMapping("/profile")
+    public ResponseEntity<ApiResponse<UserPreferencesResponse>> updatePreferences(
+            @Valid @RequestBody UserPreferencesUpdateRequest request) {
+        return ResponseEntity.ok(ApiResponse.ok(userMeService.updatePreferences(currentUserId(), request)));
     }
 
     private Long currentUserId() {

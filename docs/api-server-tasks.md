@@ -41,7 +41,8 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 | JWT | `global/auth/JwtTokenProvider.java`, `JwtAuthenticationFilter.java`, `CustomUserDetailsService.java` | OK |
 | 예외 | `global/exception/{CustomException, GlobalExceptionHandler, ErrorCode}.java` | OK. 미사용 `ErrorCode` 는 **선언 시점에만 추가** 정책 도입 (ErrorCode.java 하단 주석 참조) |
 | OAuth | `global/auth/oauth/{Kakao,Google}OAuthClient.java`, `KakaoTokenClient.java`, `OAuthUserInfo.java`, `DevOAuthController.java` | OK |
-| User 도메인 | `domain/user/{entity,dto,repository,service,controller}/*` | OK (signup / login / social) + **2026-05-03 Step 4 완료**: 마이페이지 조회/수정, 비밀번호 변경, 회원 탈퇴 익명화 (`UserMeService` / `UserMeController`) |
+| User 도메인 | `domain/user/{entity,dto,repository,service,controller}/*` | OK (signup / login / social) + **2026-05-03 Step 4 완료**: 마이페이지 조회/수정, 비밀번호 변경, 회원 탈퇴 익명화 (`UserMeService` / `UserMeController`). **2026-05-04 후속**: `UserProfile` 엔티티 + 선호도 endpoint (`GET/PUT /api/users/me/profile`) |
+| Auth 가드 | `global/auth/{JwtAuthenticationEntryPoint, JwtAccessDeniedHandler}.java` | **2026-05-04 신규** — 미인증 → 401 + ApiResponse, 미인가 → 403 + ApiResponse 일관 응답 |
 | 헬스체크 | `global/controller/HealthController.java` | OK (`GET /health`) |
 | 설정 파일 | `application.yml` / `application-{local,prod}.yml` | OK (프로파일 분리, secret env 외부화, `aws.s3.*` 키 준비) |
 | 마이그레이션 | `db/migration/V1__init.sql` (= 구 V4 가 V1 자리로 이동, fixes 적용), `V2__add_social_login_fields.sql`, `V3__add_user_deleted_at.sql` | **2026-05-02 V1 ↔ V4 통합 완료**. 구 `V1__init.sql` 폐기 + 구 `V4__fixed_schema.sql` 폐기. 새 V1 이 구 V4 의 설계를 흡수 (BIGSERIAL, V2 와 충돌하던 unique 제약 제거 등). V2/V3 는 그대로 ALTER 로 누적. **`fridge` 테이블 폐기** (사용자 결정 2026-05-02). |
@@ -52,7 +53,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 | Chat 도메인 | `domain/chat/{entity,repository,service,controller,dto}/*` | **2026-05-03 신규 (Step 5)** — read-only. AI 서버가 primary writer. 채팅방 목록 + 메시지 조회 |
 | Admin 도메인 | `domain/admin/{service,controller,dto}/*` | **2026-05-04 신규 (Step 6)** — pending_recipes 검토(목록/단건) + 승인(→recipes 이동)/반려 + 사용자 차단/해제 |
 | 보조 유틸 | `global/auth/SecurityUtil`, `domain/user/support/AuthorDisplayName` | OK |
-| 명세서 | `docs/spec/recipe-{create,read,delete}.md` (v1, 보존), **`docs/spec/recipe-{create,read,delete}-v2.md`** (2026-05-02 V4 통합 후 신규), `docs/spec/upload-presigned-url.md`, `docs/spec/ai-server-contract.md` (AI 서버 OpenAPI 0.1.0 스냅샷·갭분석), **`docs/spec/like-toggle.md`**, **`docs/spec/scrap-toggle.md`**, **`docs/spec/scrap-list.md`** (Step 3), **`docs/spec/user-me-{get,update}.md`**, **`docs/spec/user-password-change.md`**, **`docs/spec/user-withdraw.md`** (Step 4), **`docs/spec/chat-{room,message}-list.md`** (Step 5), **`docs/spec/admin-pending-recipe-list.md`**, **`docs/spec/admin-recipe-review.md`**, **`docs/spec/admin-user-block.md`** (Step 6) | OK |
+| 명세서 | `docs/spec/recipe-{create,read,delete}.md` (v1, 보존), **`docs/spec/recipe-{create,read,delete}-v2.md`** (2026-05-02 V4 통합 후 신규), `docs/spec/upload-presigned-url.md`, `docs/spec/ai-server-contract.md` (AI 서버 OpenAPI 0.1.0 스냅샷·갭분석), **`docs/spec/like-toggle.md`**, **`docs/spec/scrap-toggle.md`**, **`docs/spec/scrap-list.md`** (Step 3), **`docs/spec/user-me-{get,update}.md`**, **`docs/spec/user-password-change.md`**, **`docs/spec/user-withdraw.md`** (Step 4), **`docs/spec/chat-{room,message}-list.md`** (Step 5), **`docs/spec/admin-pending-recipe-list.md`**, **`docs/spec/admin-recipe-review.md`**, **`docs/spec/admin-user-block.md`** (Step 6), **`docs/spec/user-preferences-{get,update}.md`** (Step 4 후속, 2026-05-04) | OK |
 | 로컬 개발 환경 | `docker-compose.yml` (pgvector/pg16) | OK |
 | 온보딩 / 가이드 | `README.md`, `docs/db-testing-guide.md` | OK |
 
@@ -61,7 +62,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 - ~~**V4 마이그레이션 통합**~~ — **2026-05-02 완료**. 옵션 (b) 변형 채택 (V1 폐기 + 구 V4 가 V1 자리로 이동, V2/V3 는 보존)
 - **Upload (S3 presigned URL) 실제 구현** (명세 있음. 코드는 AWS S3 준비 후 — Step 2-4b)
 - ~~**Like / Scrap** (Step 3)~~ — **2026-05-03 완료**
-- ~~**User 마이페이지 / 탈퇴 익명화** (Step 4)~~ — **2026-05-03 완료** (선호도 `user_profiles` 는 후속 PR)
+- ~~**User 마이페이지 / 탈퇴 익명화** (Step 4)~~ — **2026-05-03 완료** + **2026-05-04 선호도 endpoint 후속 완료** (`user_profiles` 직접 입력 4필드)
 - ~~**Chat (read-only)** (Step 5)~~ — **2026-05-03 완료** (5-2 채팅방 숨김 토글은 AI 서버 합의 후 별도 PR)
 - ~~**Admin 도메인** (Step 6)~~ — **2026-05-04 완료** (pending 검토 / 승인·반려 / 사용자 차단)
 - **AI 서버 연동 모듈** (Step 7)
@@ -233,7 +234,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 4. [x] **Scrap** — 2026-05-03 완료. 토글식 + `GET /api/scraps/my`
 5. [x] **User 마이페이지** — 2026-05-03 완료
    - [x] 내 정보 조회 / 닉네임 수정 (`UserMeService.getMe/updateMe`)
-   - [ ] 선호도(`user_profiles`) 조회 / 수정 — V4 에서 컬럼 분리됨. 별도 후속 PR (entity / repository / service 모두 신설 필요)
+   - [x] **선호도(`user_profiles`) 조회 / 수정 — 2026-05-04 완료**. `GET/PUT /api/users/me/profile`. `UserProfile` 엔티티·`UserProfileRepository` 신설. PUT 은 직접 입력 4필드 (`userInput`/`cookingSkill`/`preferredCookingTime`/`servingSize`) 만 허용, AI 분석 영역(`allergies` 등) 은 보호 (DTO 부재로 자동 거부). row 없으면 upsert (`UserProfile.empty(userId)` → save). 응답에 AI 분석 결과도 함께 노출 (read-only)
    - [x] 비밀번호 변경 (LOCAL provider 한정, 소셜은 `SOCIAL_PASSWORD_NOT_ALLOWED`)
    - [x] **회원 탈퇴 (익명화)**
      * `DELETE /api/users/me` — 단일 트랜잭션
@@ -478,7 +479,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 - 검증: 빌드 + 로컬 docker 부팅 + 토글 3회 왕복(0→1→0→1) + `/api/scraps/my` 정상 노출 + 401/404 에러 케이스 확인
 
 **알려진 미흡**:
-- 인증 없이 보호 endpoint 호출 시 응답이 401 이 아닌 **403** 으로 떨어짐 (Spring Security 의 기본 동작; `AuthenticationEntryPoint` 미구현). 명세 §3.3 은 401 로 적혀 있으나 현 동작은 403. 별도 PR 에서 entry point 추가 필요.
+- ~~인증 없이 보호 endpoint 호출 시 응답이 401 이 아닌 **403** 으로 떨어짐~~ — **2026-05-04 해결** (`JwtAuthenticationEntryPoint` 추가). 미인증 → 401 + ApiResponse 로 일관됨.
 
 ---
 
@@ -505,10 +506,14 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 - `domain/like/repository/LikeRepository`, `domain/scrap/repository/ScrapRepository`, `domain/recipe/repository/PendingRecipeRepository` 에 `deleteAllByUserId` 추가
 - `ErrorCode` 에 `SOCIAL_PASSWORD_NOT_ALLOWED`, `ALREADY_WITHDRAWN` 추가
 
-**범위 밖 (후속 PR)**:
-- `user_profiles` 선호도 endpoint — V4 신설 테이블이지만 본 PR 은 entity / repository 미생성. `user_profiles` 의 풍부한 컬럼 (allergies / dietary_restrictions / preferred_* / cooking_skill / serving_size / ai_analyzed_at) 을 어떻게 노출할지 별도 spec 필요
+**후속 (2026-05-04 완료)**:
+- ~~`user_profiles` 선호도 endpoint~~ — **완료**. `docs/spec/user-preferences-{get,update}.md` (`SPEC-20260504-04/05`). `UserProfile` 엔티티 + `UserProfileRepository` 신설. `UserMeService.getPreferences/updatePreferences` 추가, `UserMeController` 에 `GET/PUT /api/users/me/profile` 노출. 직접 입력 4필드만 갱신 가능, AI 분석 영역은 보호. 탈퇴 트랜잭션도 `userProfileRepository.deleteAllByUserId` 호출하도록 변경 (구 native query 폐기)
+- ~~알려진 미흡: 미인증 → 401 응답 일관~~ — **2026-05-04 완료**. `JwtAuthenticationEntryPoint` (401) + `JwtAccessDeniedHandler` (403) 신설. 모든 미인증 / 미인가 응답이 ApiResponse 일관 형식 (`{success: false, message}`) 으로 정상화
+
+**범위 밖 (남은 후속)**:
 - 비밀번호 변경 시 기존 토큰 강제 무효화 (stateless JWT 한계)
 - 탈퇴 시 AI 서버 측 채팅 데이터 파기 동기화 (AI 팀 합의 보류)
+- `recent_recipe_ids` 풀 RecipeListItemResponse 변환 — 본 spec 범위 밖, 클라이언트가 별도 호출
 
 **알려진 동작**:
 - 탈퇴된 사용자가 살아있는 토큰으로 재호출 시: 명세상 409 `ALREADY_WITHDRAWN` 이지만 실제로는 `CustomUserDetailsService` 의 `is_blocked` 체크가 먼저 발화하여 **403** 이 떨어짐. 방어 in depth 로 수용 (사용자는 동일하게 차단됨)

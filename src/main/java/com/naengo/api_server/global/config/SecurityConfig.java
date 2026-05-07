@@ -1,5 +1,7 @@
 package com.naengo.api_server.global.config;
 
+import com.naengo.api_server.global.auth.JwtAccessDeniedHandler;
+import com.naengo.api_server.global.auth.JwtAuthenticationEntryPoint;
 import com.naengo.api_server.global.auth.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -22,6 +24,8 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
+    private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -29,6 +33,9 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable) // REST API → CSRF 불필요
                 .sessionManagement(s -> s
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // JWT → 세션 사용 안 함
+                .exceptionHandling(eh -> eh
+                        .authenticationEntryPoint(jwtAuthenticationEntryPoint) // 미인증 → 401 + ApiResponse
+                        .accessDeniedHandler(jwtAccessDeniedHandler))          // 미인가 → 403 + ApiResponse
                 .authorizeHttpRequests(auth -> auth
 
                         // ── 인증 없이 접근 가능 ──────────────────────────
