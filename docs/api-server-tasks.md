@@ -44,7 +44,8 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 | User 도메인 | `domain/user/{entity,dto,repository,service,controller}/*` | OK (signup / login / social) + **2026-05-03 Step 4 완료**: 마이페이지 조회/수정, 비밀번호 변경, 회원 탈퇴 익명화 (`UserMeService` / `UserMeController`). **2026-05-04 후속**: `UserProfile` 엔티티 + 선호도 endpoint (`GET/PUT /api/users/me/profile`) |
 | Auth 가드 | `global/auth/{JwtAuthenticationEntryPoint, JwtAccessDeniedHandler}.java` | **2026-05-04 신규** — 미인증 → 401 + ApiResponse, 미인가 → 403 + ApiResponse 일관 응답 |
 | Auth 쿠키 | `global/auth/AuthCookieFactory.java` + `JwtAuthenticationFilter` 쿠키 fallback + `AuthController.logout` | **2026-05-07 신규 (`SPEC-20260507-01`)** — JWT 를 HttpOnly Cookie 로 발급/만료. Authorization 헤더 + 쿠키 양쪽 지원 (헤더 우선). `auth.cookie.*` env 분리 (local: secure=false, prod=true) |
-| 통합 테스트 | `src/test/java/com/naengo/api_server/integration/{IntegrationTestSupport, AuthCookieIntegrationTest, RecipeFlowIntegrationTest}.java` | **2026-05-07 신규 (Step 8-4)** — Testcontainers Postgres+pgvector + Spring Boot 4 `@SpringBootTest` + RestClient. 11건 PASS |
+| 통합 테스트 | `src/test/java/com/naengo/api_server/integration/{IntegrationTestSupport, AuthCookieIntegrationTest, RecipeFlowIntegrationTest, CorsIntegrationTest}.java` | **2026-05-07 신규 (Step 8-4 / 8-1)** — Testcontainers Postgres+pgvector + Spring Boot 4 `@SpringBootTest` + RestClient. **15건 PASS** (Auth 8 + Recipe 3 + CORS 4) |
+| CORS | `global/config/{CorsProperties, SecurityConfig#corsConfigurationSource}.java` + `cors.*` env | **2026-05-07 신규 (Step 8-1)** — `allowCredentials=true` 고정 (쿠키 인증 호환). origin / methods / headers / exposed-headers 모두 env 분리 (`CORS_*`). preflight max-age 3600s |
 | 헬스체크 | `global/controller/HealthController.java` | OK (`GET /health`) |
 | 설정 파일 | `application.yml` / `application-{local,prod}.yml` | OK (프로파일 분리, secret env 외부화, `aws.s3.*` 키 준비) |
 | 마이그레이션 | `db/migration/V1__init.sql` (= 구 V4 가 V1 자리로 이동, fixes 적용), `V2__add_social_login_fields.sql`, `V3__add_user_deleted_at.sql` | **2026-05-02 V1 ↔ V4 통합 완료**. 구 `V1__init.sql` 폐기 + 구 `V4__fixed_schema.sql` 폐기. 새 V1 이 구 V4 의 설계를 흡수 (BIGSERIAL, V2 와 충돌하던 unique 제약 제거 등). V2/V3 는 그대로 ALTER 로 누적. **`fridge` 테이블 폐기** (사용자 결정 2026-05-02). |
@@ -618,7 +619,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 ### Step 8. 운영 준비 (배포 직전) — **부분 완료 (8-4 통합 테스트 2026-05-07 완료)**
 의존: Step 1~7 완료.
 
-- [ ] 8-1. CORS 설정 (프론트 도메인 화이트리스트)
+- [x] 8-1. **CORS 설정 — 2026-05-07 완료**. `cors.allowed-origins` (기본 `localhost:3000,5173` / 운영 env 주입), allowed-methods / allowed-headers / exposed-headers (`Set-Cookie` 노출) / max-age=3600. `allowCredentials=true` 고정 (쿠키 인증 호환). 통합 테스트 4건 (`CorsIntegrationTest`)
 - [ ] 8-2. 운영 secret 외부화 (JWT secret, DB 접속정보, AWS 키, 내부 토큰) — `application-prod.yml` 에 env 자리표시자 일부 준비됨
 - [ ] 8-3. 로깅 정책 정리 (요청 ID, 사용자 ID 마스킹, PII 로그 금지)
 - [x] 8-4. **통합 테스트** — 2026-05-07 완료
