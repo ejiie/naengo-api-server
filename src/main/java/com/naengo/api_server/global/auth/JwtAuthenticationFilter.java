@@ -1,5 +1,6 @@
 package com.naengo.api_server.global.auth;
 
+import com.naengo.api_server.global.logging.RequestIdFilter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
@@ -7,6 +8,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -43,6 +45,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
                 SecurityContextHolder.getContext().setAuthentication(authentication);
+                // MDC 에 userId put → 이후 로그 라인이 모두 사용자 식별 가능. RequestIdFilter 의 finally 가 clear.
+                MDC.put(RequestIdFilter.MDC_USER_ID, String.valueOf(userId));
             } catch (Exception e) {
                 // 유효하지 않은 토큰 → SecurityContext 비우고 그냥 통과 (인증 안 된 상태로)
                 log.warn("[JWT Filter] {}", e.getMessage());
