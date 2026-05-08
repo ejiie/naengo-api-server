@@ -6,12 +6,15 @@ import com.naengo.api_server.domain.user.dto.UserPreferencesResponse;
 import com.naengo.api_server.domain.user.dto.UserPreferencesUpdateRequest;
 import com.naengo.api_server.domain.user.dto.UserUpdateRequest;
 import com.naengo.api_server.domain.user.service.UserMeService;
+import com.naengo.api_server.global.auth.AuthCookieFactory;
 import com.naengo.api_server.global.auth.SecurityUtil;
 import com.naengo.api_server.global.dto.ApiResponse;
 import com.naengo.api_server.global.exception.CustomException;
 import com.naengo.api_server.global.exception.ErrorCode;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -21,6 +24,7 @@ import org.springframework.web.bind.annotation.*;
 public class UserMeController {
 
     private final UserMeService userMeService;
+    private final AuthCookieFactory authCookieFactory;
 
     /** 본인 마이페이지 조회 (`SPEC-20260503-04`). */
     @GetMapping
@@ -42,11 +46,14 @@ public class UserMeController {
         return ResponseEntity.noContent().build();
     }
 
-    /** 회원 탈퇴 (익명화, `SPEC-20260503-07`). */
+    /** 회원 탈퇴 (익명화, `SPEC-20260503-07`). 쿠키 동시 만료. */
     @DeleteMapping
     public ResponseEntity<Void> withdraw() {
         userMeService.withdraw(currentUserId());
-        return ResponseEntity.noContent().build();
+        ResponseCookie expired = authCookieFactory.expire();
+        return ResponseEntity.noContent()
+                .header(HttpHeaders.SET_COOKIE, expired.toString())
+                .build();
     }
 
     /** 선호도 조회 (`SPEC-20260504-04`). */

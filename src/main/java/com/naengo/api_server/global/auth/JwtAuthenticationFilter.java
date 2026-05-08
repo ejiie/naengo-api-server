@@ -2,6 +2,7 @@ package com.naengo.api_server.global.auth;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +24,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
     private final CustomUserDetailsService userDetailsService;
+    private final AuthCookieFactory authCookieFactory;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -52,9 +54,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private String resolveToken(HttpServletRequest request) {
+        // 1) Authorization 헤더 우선 (모바일 / 외부 API 호출)
         String bearer = request.getHeader("Authorization");
         if (StringUtils.hasText(bearer) && bearer.startsWith("Bearer ")) {
             return bearer.substring(7);
+        }
+        // 2) HttpOnly Cookie fallback (브라우저)
+        Cookie[] cookies = request.getCookies();
+        if (cookies != null) {
+            String name = authCookieFactory.getName();
+            for (Cookie c : cookies) {
+                if (name.equals(c.getName()) && StringUtils.hasText(c.getValue())) {
+                    return c.getValue();
+                }
+            }
         }
         return null;
     }

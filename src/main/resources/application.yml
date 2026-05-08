@@ -27,6 +27,17 @@ spring:
 jwt:
   expiration: 86400000          # 24시간 (ms)
 
+# JWT 를 HttpOnly Cookie 로도 주고받기 (2026-05-02 합의, `docs/spec/auth-cookie.md`).
+# Authorization 헤더는 모바일 호환을 위해 병행 지원 — JwtAuthenticationFilter 가 헤더 우선, 쿠키 fallback.
+auth:
+  cookie:
+    name: ${AUTH_COOKIE_NAME:NAENGO_AT}
+    max-age-seconds: ${AUTH_COOKIE_MAX_AGE:86400}    # JWT 만료와 일치 (24h)
+    path: /
+    secure: ${AUTH_COOKIE_SECURE:false}              # local: false, prod: true
+    same-site: ${AUTH_COOKIE_SAME_SITE:Lax}          # Lax | Strict | None
+    domain: ${AUTH_COOKIE_DOMAIN:}                   # 기본 비움 (호스트 한정). 멀티 서브도메인이면 .example.com
+
 oauth:
   kakao:
     user-info-url: https://kapi.kakao.com/v2/user/me

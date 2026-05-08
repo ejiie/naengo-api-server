@@ -43,6 +43,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 | OAuth | `global/auth/oauth/{Kakao,Google}OAuthClient.java`, `KakaoTokenClient.java`, `OAuthUserInfo.java`, `DevOAuthController.java` | OK |
 | User 도메인 | `domain/user/{entity,dto,repository,service,controller}/*` | OK (signup / login / social) + **2026-05-03 Step 4 완료**: 마이페이지 조회/수정, 비밀번호 변경, 회원 탈퇴 익명화 (`UserMeService` / `UserMeController`). **2026-05-04 후속**: `UserProfile` 엔티티 + 선호도 endpoint (`GET/PUT /api/users/me/profile`) |
 | Auth 가드 | `global/auth/{JwtAuthenticationEntryPoint, JwtAccessDeniedHandler}.java` | **2026-05-04 신규** — 미인증 → 401 + ApiResponse, 미인가 → 403 + ApiResponse 일관 응답 |
+| Auth 쿠키 | `global/auth/AuthCookieFactory.java` + `JwtAuthenticationFilter` 쿠키 fallback + `AuthController.logout` | **2026-05-07 신규 (`SPEC-20260507-01`)** — JWT 를 HttpOnly Cookie 로 발급/만료. Authorization 헤더 + 쿠키 양쪽 지원 (헤더 우선). `auth.cookie.*` env 분리 (local: secure=false, prod=true) |
 | 헬스체크 | `global/controller/HealthController.java` | OK (`GET /health`) |
 | 설정 파일 | `application.yml` / `application-{local,prod}.yml` | OK (프로파일 분리, secret env 외부화, `aws.s3.*` 키 준비) |
 | 마이그레이션 | `db/migration/V1__init.sql` (= 구 V4 가 V1 자리로 이동, fixes 적용), `V2__add_social_login_fields.sql`, `V3__add_user_deleted_at.sql` | **2026-05-02 V1 ↔ V4 통합 완료**. 구 `V1__init.sql` 폐기 + 구 `V4__fixed_schema.sql` 폐기. 새 V1 이 구 V4 의 설계를 흡수 (BIGSERIAL, V2 와 충돌하던 unique 제약 제거 등). V2/V3 는 그대로 ALTER 로 누적. **`fridge` 테이블 폐기** (사용자 결정 2026-05-02). |
@@ -53,7 +54,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 | Chat 도메인 | `domain/chat/{entity,repository,service,controller,dto}/*` | **2026-05-03 신규 (Step 5)** — read-only. AI 서버가 primary writer. 채팅방 목록 + 메시지 조회 |
 | Admin 도메인 | `domain/admin/{service,controller,dto}/*` | **2026-05-04 신규 (Step 6)** — pending_recipes 검토(목록/단건) + 승인(→recipes 이동)/반려 + 사용자 차단/해제 |
 | 보조 유틸 | `global/auth/SecurityUtil`, `domain/user/support/AuthorDisplayName` | OK |
-| 명세서 | `docs/spec/recipe-{create,read,delete}.md` (v1, 보존), **`docs/spec/recipe-{create,read,delete}-v2.md`** (2026-05-02 V4 통합 후 신규), `docs/spec/upload-presigned-url.md`, `docs/spec/ai-server-contract.md` (AI 서버 OpenAPI 0.1.0 스냅샷·갭분석), **`docs/spec/like-toggle.md`**, **`docs/spec/scrap-toggle.md`**, **`docs/spec/scrap-list.md`** (Step 3), **`docs/spec/user-me-{get,update}.md`**, **`docs/spec/user-password-change.md`**, **`docs/spec/user-withdraw.md`** (Step 4), **`docs/spec/chat-{room,message}-list.md`** (Step 5), **`docs/spec/admin-pending-recipe-list.md`**, **`docs/spec/admin-recipe-review.md`**, **`docs/spec/admin-user-block.md`** (Step 6), **`docs/spec/user-preferences-{get,update}.md`** (Step 4 후속, 2026-05-04) | OK |
+| 명세서 | `docs/spec/recipe-{create,read,delete}.md` (v1, 보존), **`docs/spec/recipe-{create,read,delete}-v2.md`** (2026-05-02 V4 통합 후 신규), `docs/spec/upload-presigned-url.md`, `docs/spec/ai-server-contract.md` (AI 서버 OpenAPI 0.1.0 스냅샷·갭분석), **`docs/spec/like-toggle.md`**, **`docs/spec/scrap-toggle.md`**, **`docs/spec/scrap-list.md`** (Step 3), **`docs/spec/user-me-{get,update}.md`**, **`docs/spec/user-password-change.md`**, **`docs/spec/user-withdraw.md`** (Step 4), **`docs/spec/chat-{room,message}-list.md`** (Step 5), **`docs/spec/admin-pending-recipe-list.md`**, **`docs/spec/admin-recipe-review.md`**, **`docs/spec/admin-user-block.md`** (Step 6), **`docs/spec/user-preferences-{get,update}.md`** (Step 4 후속, 2026-05-04), **`docs/spec/auth-cookie.md`** (2026-05-07, 인증 쿠키 통로) | OK |
 | 로컬 개발 환경 | `docker-compose.yml` (pgvector/pg16) | OK |
 | 온보딩 / 가이드 | `README.md`, `docs/db-testing-guide.md` | OK |
 
@@ -302,14 +303,15 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 
 내가 하는 건: **그 결과물을 받아 검증·저장·재가공하고, 다시 정형화된 응답으로 내보내는 것**.
 
-### 인증 흐름 갱신 (2026-05-02 합의)
+### 인증 흐름 갱신 (2026-05-02 합의 → **2026-05-07 구현 완료**)
 
-기존 Phase 0-1 의 `Authorization: Bearer <JWT>` 만 사용하던 방안이, **JWT 를 HttpOnly Cookie 로 주고받기** 로 합의 변경됨:
+기존 Phase 0-1 의 `Authorization: Bearer <JWT>` 만 사용하던 방안이, **JWT 를 HttpOnly Cookie 로 주고받기** 로 합의 변경됨. 본 합의는 [`docs/spec/auth-cookie.md`](spec/auth-cookie.md) (`SPEC-20260507-01`) 으로 구현 완료:
 
-- 자체 로그인 / 소셜 로그인 모두 응답에서 `Set-Cookie: <jwt_cookie_name>=<JWT>; HttpOnly; Secure; SameSite=Lax/Strict; Path=/` 로 발급
-- 프론트는 별도 토큰 저장소(localStorage 등) 를 쓰지 않고 브라우저가 자동으로 쿠키 동봉
-- API 서버의 `JwtAuthenticationFilter` 는 `Authorization` 헤더 외에 쿠키도 읽도록 확장 필요 (추후 PR)
-- 모바일 앱 호환은 별도 합의 필요 (모바일은 Cookie 가 어색하므로 헤더도 병행 지원)
+- ✅ 자체 로그인 / 소셜 로그인 / 회원가입 응답에서 `Set-Cookie: NAENGO_AT=<JWT>; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400` (+ prod: `Secure`) 발급. body 의 `accessToken` 도 그대로 노출 (모바일 호환)
+- ✅ `JwtAuthenticationFilter` 가 `Authorization` 헤더 우선, 없으면 쿠키 fallback
+- ✅ `POST /api/auth/logout` 신설 — 쿠키 만료 (Max-Age=0). 인증 없이도 호출 가능 (멱등). stateless JWT 라 토큰 자체는 만료 시각까지 유효
+- ✅ `DELETE /api/users/me` (탈퇴) 도 쿠키 만료 동봉
+- ✅ 모바일은 기존 Authorization 헤더 그대로 사용 (응답 body 의 accessToken)
 - AI 서버와의 secret 공유 정책은 그대로 유지 (양쪽 다 같은 secret 으로 JWT 검증)
 
 ---

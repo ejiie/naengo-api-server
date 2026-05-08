@@ -12,3 +12,10 @@ oauth:
   kakao:
     rest-api-key: ${KAKAO_REST_API_KEY}
     redirect-uri: ${KAKAO_REDIRECT_URI}
+
+# 운영 쿠키: HTTPS 만, SameSite=Lax 기본 (필요 시 Strict 로 강화)
+auth:
+  cookie:
+    secure: true
+    same-site: ${AUTH_COOKIE_SAME_SITE:Lax}
+    domain: ${AUTH_COOKIE_DOMAIN:}
