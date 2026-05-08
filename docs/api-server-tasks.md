@@ -40,7 +40,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 | 보안 설정 | `global/config/SecurityConfig.java` | OK (`/health` permitAll 반영) |
 | JWT | `global/auth/JwtTokenProvider.java`, `JwtAuthenticationFilter.java`, `CustomUserDetailsService.java` | OK |
 | 예외 | `global/exception/{CustomException, GlobalExceptionHandler, ErrorCode}.java` | OK. 미사용 `ErrorCode` 는 **선언 시점에만 추가** 정책 도입 (ErrorCode.java 하단 주석 참조) |
-| OAuth | `global/auth/oauth/{Kakao,Google}OAuthClient.java`, `KakaoTokenClient.java`, `OAuthUserInfo.java`, `DevOAuthController.java` | OK |
+| OAuth | `global/auth/oauth/{Kakao,Google}OAuthClient.java`, `KakaoTokenClient.java`, `OAuthUserInfo.java`, `DevOAuthController.java` | 카카오 OK (dev 환경 검증). **구글은 미실현 — 코드 placeholder 만** (`docs/changes/oauth-google-status.md`) |
 | User 도메인 | `domain/user/{entity,dto,repository,service,controller}/*` | OK (signup / login / social) + **2026-05-03 Step 4 완료**: 마이페이지 조회/수정, 비밀번호 변경, 회원 탈퇴 익명화 (`UserMeService` / `UserMeController`). **2026-05-04 후속**: `UserProfile` 엔티티 + 선호도 endpoint (`GET/PUT /api/users/me/profile`) |
 | Auth 가드 | `global/auth/{JwtAuthenticationEntryPoint, JwtAccessDeniedHandler}.java` | **2026-05-04 신규** — 미인증 → 401 + ApiResponse, 미인가 → 403 + ApiResponse 일관 응답 |
 | Auth 쿠키 | `global/auth/AuthCookieFactory.java` + `JwtAuthenticationFilter` 쿠키 fallback + `AuthController.logout` | **2026-05-07 신규 (`SPEC-20260507-01`)** — JWT 를 HttpOnly Cookie 로 발급/만료. Authorization 헤더 + 쿠키 양쪽 지원 (헤더 우선). `auth.cookie.*` env 분리 (local: secure=false, prod=true) |
@@ -621,7 +621,12 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 의존: Step 1~7 완료.
 
 - [x] 8-1. **CORS 설정 — 2026-05-07 완료**. `cors.allowed-origins` (기본 `localhost:3000,5173` / 운영 env 주입), allowed-methods / allowed-headers / exposed-headers (`Set-Cookie` 노출) / max-age=3600. `allowCredentials=true` 고정 (쿠키 인증 호환). 통합 테스트 4건 (`CorsIntegrationTest`)
-- [ ] 8-2. 운영 secret 외부화 (JWT secret, DB 접속정보, AWS 키, 내부 토큰) — `application-prod.yml` 에 env 자리표시자 일부 준비됨
+- [x] 8-2. **운영 secret 외부화 — 2026-05-08 점검 완료**.
+  - `application-prod.yml` 에 default 없는 env 자리표시자: `DB_URL/USERNAME/PASSWORD`, `JWT_SECRET`, `KAKAO_REST_API_KEY/REDIRECT_URI`, `CORS_ALLOWED_ORIGINS` (누락 시 부팅 실패). `AUTH_COOKIE_SECURE: true` 명시 override.
+  - `application.yml` 의 default (`localhost:3000` 등) 가 prod 에 새지 않게 강제 — 로컬에만 적용
+  - AI 서버 base URL / 내부 토큰은 Step 7 진행 시 추가 (옵션 A 선택 시)
+  - 구글 OAuth 는 미실현이므로 prod env 미요구 (`docs/changes/oauth-google-status.md`)
+  - README 의 환경변수 표 갱신 — prod 필수 ✅ 표시 + 그룹별 (DB / JWT / CORS / OAuth / AWS) 구조
 - [x] 8-3. **로깅 정책 — 2026-05-08 완료**. `RequestIdFilter` 가 `X-Request-Id` 자동 부여 + MDC put + 응답 헤더 echo. `JwtAuthenticationFilter` 가 인증 성공 시 MDC `userId` put. `logback-spring.xml` 패턴에 `[%X{requestId}] [user=%X{userId}]`. PII 로그 금지 정책은 [`docs/changes/logging-policy.md`](changes/logging-policy.md). 통합 테스트 4건 (`RequestIdIntegrationTest`)
 - [x] 8-4. **통합 테스트** — 2026-05-07 완료
   - 인프라: Testcontainers (`pgvector/pgvector:pg16` singleton, JVM 단위 공유) + Spring Boot 4 `@SpringBootTest(RANDOM_PORT)` + Spring 6 `RestClient`
