@@ -636,6 +636,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 - [x] ~~`ErrorCode` 선언만 있고 쓰이지 않는 Recipe/Chat 코드 정리~~ — `RECIPE_ALREADY_LIKED/SCRAPPED`(토글 설계상 불필요), `CHAT_ROOM_NOT_FOUND/SESSION_NOT_FOUND`(Step 5 에서 재도입) 4건 제거. 정책: "사용되는 시점에 추가"
 - [ ] 예외 메시지 i18n 필요 여부 검토
 - [ ] pre-commit 훅 또는 Spotless 같은 포맷터 도입 검토
-- [ ] 기동 시 표시되는 사소한 경고 2건 정리 (Step 1 검증 시 발견)
-  - `HHH90000025: PostgreSQLDialect does not need to be specified explicitly` → `application.yml` 의 `spring.jpa.properties.hibernate.dialect` 라인 제거 (Hibernate 7 자동 선택)
-  - `spring.jpa.open-in-view is enabled by default` → `application.yml` 에 `spring.jpa.open-in-view: false` 명시 (REST API 서버 정석)
+- [x] ~~기동 시 표시되는 사소한 경고 2건 정리~~ — **2026-05-07 완료**
+  - [x] `HHH90000025: PostgreSQLDialect ...` → `application.yml` 의 `spring.jpa.properties.hibernate.dialect` 라인 제거 (Hibernate 7 자동 선택)
+  - [x] `spring.jpa.open-in-view is enabled by default` → `application.yml` 에 `spring.jpa.open-in-view: false` 명시 (REST API 서버 정석)
+  - 검증: `bootRun` 부팅 로그에 두 경고 모두 미발생. 잔존 WARN 은 V2 의 `IF NOT EXISTS` 가 V1 컬럼을 skip 하는 정상 동작 2건만

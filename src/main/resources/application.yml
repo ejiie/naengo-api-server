@@ -15,8 +15,10 @@ spring:
       ddl-auto: validate
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
+        # Hibernate 7+ 는 PostgreSQLDialect 를 자동 선택. 명시 시 HHH90000025 경고 발생 → 제거.
         format_sql: true
+    # REST API 서버 정석 — 트랜잭션 밖에서 lazy 로딩되지 않도록 명시 (기본 enabled 의 경고 제거)
+    open-in-view: false
     show-sql: false
 
   flyway:
