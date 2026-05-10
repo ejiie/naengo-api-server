@@ -170,9 +170,12 @@ chat_messages
 
 ## 5. 결론 — V4 의 실제 적용 상태
 
-> **2026-05-02 갱신**: 본 §5 의 1차 권고(점진적 ALTER) 와는 달리, 사용자가 **`V4__fixed_schema.sql` 을 fresh-DB 스타일 `CREATE TABLE` 모음** 으로 작성·푸시했음 (commit `48204b4`). 따라서 실 적용 상태와 본 갭분석의 권고가 일치하지 않으며, **§5.A 통합 이슈** 가 추가로 발생.
+> ⚠️ **2026-05-04 갱신 — §5.A 의 통합 이슈 12건 모두 해결**.
+> 사용자 결정으로 **V4 가 V1 자리를 완전히 흡수** (옵션 (b) 변형 채택) → 구 V1 / 구 V4 모두 폐기, 새 V1 이 구 V4 의 설계를 흡수하면서 12건의 통합 이슈를 모두 해결. 자세한 결정·결과는 [`docs/changes/V4-integration-resolved.md`](../changes/V4-integration-resolved.md). 본 §5 의 옵션 (a)/(b)/(c) 권고는 history 보존 목적으로 두되 **현행은 옵션 (b) 변형이 적용 완료된 상태**.
 
-### 5.A 현재 `V4__fixed_schema.sql` 의 통합 이슈 (해결 필요)
+> **2026-05-02 원본 메모**: 본 §5 의 1차 권고(점진적 ALTER) 와는 달리, 사용자가 **`V4__fixed_schema.sql` 을 fresh-DB 스타일 `CREATE TABLE` 모음** 으로 작성·푸시했음 (commit `48204b4`). 따라서 실 적용 상태와 본 갭분석의 권고가 일치하지 않으며, **§5.A 통합 이슈** 가 추가로 발생 → **위 2026-05-04 갱신으로 해결**.
+
+### 5.A 구 `V4__fixed_schema.sql` 의 통합 이슈 (history — 모두 해결됨)
 
 `src/main/resources/db/migration/V4__fixed_schema.sql` 분석 결과:
 

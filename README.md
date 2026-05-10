@@ -5,7 +5,7 @@
 > 이 저장소만 읽고도 다른 팀원 도움 없이 로컬에서 기동할 수 있게 작성되어 있다.
 > 아키텍처·책임 분담·진행 상황은 **[`docs/api-server-tasks.md`](docs/api-server-tasks.md)** 를 우선 참고.
 > 기능별 상세 계약은 **[`docs/spec/`](docs/spec/)**, DB 동작 검증 방법은 **[`docs/db-testing-guide.md`](docs/db-testing-guide.md)**.
-> AI 서버 호출이 포함된 작업은 **[AI 서버 OpenAPI/Swagger](http://43.201.62.254:8000/docs)** 가 진실원본 — 명세 작성/코딩 전에 반드시 확인.
+> AI 서버 호출이 포함된 작업은 **[AI 서버 OpenAPI/Swagger](http://43.201.62.254:8000/docs)** 가 진실원본 — 명세 작성/코딩 전에 반드시 확인. 로컬 스냅샷은 [`docs/api-1.json`](docs/api-1.json) (네트워크 접근 불가 시 이 파일로 대체).
 
 ---
 
@@ -54,22 +54,39 @@ curl -s http://localhost:8080/health
 
 ---
 
-## 환경변수 (선택)
+## 환경변수
 
-모든 값에 로컬 기본값이 있어 env 없이도 기동된다. 운영·개인 환경을 덮어쓰려면 아래를 export:
+로컬은 모든 값에 기본값이 있어 env 없이도 기동. **운영(prod) 은 ✅ 표시 항목이 누락되면 부팅 실패** (default 가 없게 강제 — `application-prod.yml`).
 
-| 키 | 기본(local) | 설명 |
-|---|---|---|
-| `SPRING_PROFILES_ACTIVE` | `local` | `local` / `prod` |
-| `DB_URL` | `jdbc:postgresql://localhost:5434/naengo` | JDBC URL. 호스트 포트가 **5434** 인 이유는 `docker-compose.yml` 주석 참조 |
-| `DB_USERNAME` | `naengo` | |
-| `DB_PASSWORD` | `naengo` | |
-| `JWT_SECRET` | 32자 더미 | **운영에서는 반드시 교체**. 32자 이상 |
-| `KAKAO_REST_API_KEY` | `""` | 카카오 로그인 테스트용 |
-| `KAKAO_REDIRECT_URI` | `http://localhost:8080/oauth/kakao/test-callback` | |
-| `AWS_REGION` | `ap-northeast-2` | |
-| `AWS_S3_BUCKET` | `""` | S3 업로드 엔드포인트가 구현될 때 필요. 비어있으면 업로드 관련 기능은 비활성 |
-| `AWS_S3_PUBLIC_URL_PREFIX` | `""` | 레시피 `imageUrl` 프리픽스 검증용. 비어있으면 검증 스킵 |
+| 키 | 기본(local) | prod 필수 | 설명 |
+|---|---|---|---|
+| `SPRING_PROFILES_ACTIVE` | `local` | — | `local` / `prod` |
+| **DB** | | | |
+| `DB_URL` | `jdbc:postgresql://localhost:5434/naengo` | ✅ | JDBC URL. 로컬 포트 **5434** (`docker-compose.yml`) |
+| `DB_USERNAME` | `naengo` | ✅ | |
+| `DB_PASSWORD` | `naengo` | ✅ | |
+| **JWT / 인증** | | | |
+| `JWT_SECRET` | 32자 더미 | ✅ | 32자 이상. 운영은 반드시 교체. AI 서버와 공유 |
+| `AUTH_COOKIE_NAME` | `NAENGO_AT` | — | JWT 쿠키 이름 |
+| `AUTH_COOKIE_MAX_AGE` | `86400` | — | 쿠키 만료 (초). JWT expiration 과 일치 권장 |
+| `AUTH_COOKIE_SECURE` | `false` (local) / `true` (prod 강제) | — | HTTPS 강제. prod 는 yml 에서 `true` 명시 |
+| `AUTH_COOKIE_SAME_SITE` | `Lax` | — | `Lax` / `Strict` / `None` |
+| `AUTH_COOKIE_DOMAIN` | `""` (호스트 한정) | — | 멀티 서브도메인 시 `.example.com` |
+| **CORS** | | | |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:5173` | ✅ | 프론트 도메인 콤마 구분. **wildcard 불가** (cookie 인증 호환) |
+| `CORS_ALLOWED_METHODS` | `GET,POST,PUT,PATCH,DELETE,OPTIONS` | — | |
+| `CORS_ALLOWED_HEADERS` | `Authorization,Content-Type,Cookie` | — | |
+| `CORS_EXPOSED_HEADERS` | `Set-Cookie` | — | 브라우저가 응답 헤더로 노출하는 것 |
+| `CORS_MAX_AGE` | `3600` | — | preflight 캐시 (초) |
+| **OAuth (소셜)** | | | |
+| `KAKAO_REST_API_KEY` | `""` | ✅ | 카카오 개발자 콘솔의 REST API Key |
+| `KAKAO_REDIRECT_URI` | `http://localhost:8080/oauth/kakao/test-callback` | ✅ | dev callback. 운영은 프론트 redirect URI |
+| **AWS** (Step 2-4b S3, 인프라 미준비 시 비워두면 503) | | | |
+| `AWS_REGION` | `ap-northeast-2` | — | |
+| `AWS_S3_BUCKET` | `""` | — | 비어있으면 업로드 endpoint 503 |
+| `AWS_S3_PUBLIC_URL_PREFIX` | `""` | — | 레시피 imageUrl 프리픽스 검증. 비어있으면 검증 스킵 |
+
+> **구글 OAuth 는 현재 미실현 상태**. 코드는 placeholder 로만 존재 — `SocialAuthService.googleLogin` 호출 시 동작 미검증. 운영에서는 비활성화 권장 (env 추가 X).
 
 로컬에서 개인 override 를 쓰고 싶다면 `.env.local` 을 만들어 IDE Run Config 또는 쉘에서 로드한다. (`.gitignore` 에 `.env*` 포함)
 

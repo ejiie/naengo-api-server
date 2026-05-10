@@ -5,9 +5,10 @@
 
 > ### 🔗 외부 인터페이스 — AI 서버 API 문서 (필수 참조)
 > - **AI 서버 OpenAPI/Swagger UI**: <http://43.201.62.254:8000/docs>
-> - 본 문서에서 "AI 서버 호출" 이 등장하는 모든 지점(임베딩, 추천, 재료 분석 등)의 **요청/응답 스키마는 위 문서를 진실원본으로 본다**. tasks 문서 / 명세서 본문 / 코드 상의 가정과 위 문서가 어긋날 경우 **AI 서버 docs 가 우선**.
-> - 새 명세 작성 또는 기존 명세 갱신 시 §4 "작업 절차" 의 0번 단계로 **이 URL 부터 확인** 한다.
-> - 변경이 잦은 자원이므로 캡처 대신 **링크로 참조**. 끊어진 사실이 발견되면 곧장 본 문서 / 관련 명세 / `change-log` 에 기록.
+> - **로컬 스냅샷**: [`docs/api-1.json`](api-1.json) — 위 URL 의 `openapi.json` 을 받아 저장소에 캡처한 것. 본 문서·명세에서 "AI 서버 docs 정독" 이라고 하면 **이 파일을 읽으면 충분** (네트워크 / 사내 VPN 접근 불요).
+> - 본 문서에서 "AI 서버 호출" 이 등장하는 모든 지점(임베딩, 추천, 재료 분석 등)의 **요청/응답 스키마는 위 두 자원을 진실원본으로 본다**. tasks 문서 / 명세서 본문 / 코드 상의 가정과 위 두 자원이 어긋날 경우 **AI 서버 docs 가 우선**.
+> - 새 명세 작성 또는 기존 명세 갱신 시 §4 "작업 절차" 의 0번 단계로 **`docs/api-1.json` 부터 확인** 한다 (또는 docs URL 이 더 최신이면 그걸).
+> - AI 서버 측에서 OpenAPI 가 갱신될 때마다 `docs/api-1.json` 도 같은 PR 에서 동기화한다. 동기화가 끊어진 사실을 발견하면 곧장 본 문서 / 관련 명세 / `change-log` 에 기록.
 
 ---
 
@@ -39,15 +40,24 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 | 보안 설정 | `global/config/SecurityConfig.java` | OK (`/health` permitAll 반영) |
 | JWT | `global/auth/JwtTokenProvider.java`, `JwtAuthenticationFilter.java`, `CustomUserDetailsService.java` | OK |
 | 예외 | `global/exception/{CustomException, GlobalExceptionHandler, ErrorCode}.java` | OK. 미사용 `ErrorCode` 는 **선언 시점에만 추가** 정책 도입 (ErrorCode.java 하단 주석 참조) |
-| OAuth | `global/auth/oauth/{Kakao,Google}OAuthClient.java`, `KakaoTokenClient.java`, `OAuthUserInfo.java`, `DevOAuthController.java` | OK |
-| User 도메인 | `domain/user/{entity,dto,repository,service,controller}/*` | OK (signup / login / social). 탈퇴·마이페이지는 Step 4 |
+| OAuth | `global/auth/oauth/{Kakao,Google}OAuthClient.java`, `KakaoTokenClient.java`, `OAuthUserInfo.java`, `DevOAuthController.java` | 카카오 OK (dev 환경 검증). **구글은 미실현 — 코드 placeholder 만** (`docs/changes/oauth-google-status.md`) |
+| User 도메인 | `domain/user/{entity,dto,repository,service,controller}/*` | OK (signup / login / social) + **2026-05-03 Step 4 완료**: 마이페이지 조회/수정, 비밀번호 변경, 회원 탈퇴 익명화 (`UserMeService` / `UserMeController`). **2026-05-04 후속**: `UserProfile` 엔티티 + 선호도 endpoint (`GET/PUT /api/users/me/profile`) |
+| Auth 가드 | `global/auth/{JwtAuthenticationEntryPoint, JwtAccessDeniedHandler}.java` | **2026-05-04 신규** — 미인증 → 401 + ApiResponse, 미인가 → 403 + ApiResponse 일관 응답 |
+| Auth 쿠키 | `global/auth/AuthCookieFactory.java` + `JwtAuthenticationFilter` 쿠키 fallback + `AuthController.logout` | **2026-05-07 신규 (`SPEC-20260507-01`)** — JWT 를 HttpOnly Cookie 로 발급/만료. Authorization 헤더 + 쿠키 양쪽 지원 (헤더 우선). `auth.cookie.*` env 분리 (local: secure=false, prod=true) |
+| 통합 테스트 | `src/test/java/com/naengo/api_server/integration/{IntegrationTestSupport, AuthCookie, RecipeFlow, Cors, RequestId}IntegrationTest.java` | **2026-05-07 신규 + 2026-05-08 RequestId 추가** — Testcontainers + Spring Boot 4 + RestClient. **19건 PASS** (Auth 8 + Recipe 3 + CORS 4 + RequestId 4) |
+| CORS | `global/config/{CorsProperties, SecurityConfig#corsConfigurationSource}.java` + `cors.*` env | **2026-05-07 신규 (Step 8-1)** — `allowCredentials=true` 고정 (쿠키 인증 호환). origin / methods / headers / exposed-headers 모두 env 분리 (`CORS_*`). preflight max-age 3600s |
+| 로깅 정책 | `global/logging/RequestIdFilter.java`, `JwtAuthenticationFilter` MDC 확장, `logback-spring.xml` | **2026-05-08 신규 (Step 8-3)** — `X-Request-Id` 자동 부여 / MDC `requestId`+`userId` / 응답 헤더 echo. PII 로그 금지 정책은 `docs/changes/logging-policy.md` |
 | 헬스체크 | `global/controller/HealthController.java` | OK (`GET /health`) |
 | 설정 파일 | `application.yml` / `application-{local,prod}.yml` | OK (프로파일 분리, secret env 외부화, `aws.s3.*` 키 준비) |
 | 마이그레이션 | `db/migration/V1__init.sql` (= 구 V4 가 V1 자리로 이동, fixes 적용), `V2__add_social_login_fields.sql`, `V3__add_user_deleted_at.sql` | **2026-05-02 V1 ↔ V4 통합 완료**. 구 `V1__init.sql` 폐기 + 구 `V4__fixed_schema.sql` 폐기. 새 V1 이 구 V4 의 설계를 흡수 (BIGSERIAL, V2 와 충돌하던 unique 제약 제거 등). V2/V3 는 그대로 ALTER 로 누적. **`fridge` 테이블 폐기** (사용자 결정 2026-05-02). |
 | 빌드 도구 | `build.gradle` | Flyway(core + pg) 추가됨 |
-| Recipe 도메인 | `domain/recipe/{entity,repository,service,controller,dto}/*` | OK (create/read/delete + stats 동기화). 임베딩·승인 흐름은 Step 6/7 |
+| Recipe 도메인 | `domain/recipe/{entity,repository,service,controller,dto,support}/*` | OK (create→pending_recipes, read→recipes, delete→pending). `RecipeListMapper` 가 `Page<Recipe>` → `RecipeListResponse` 매핑을 공유 |
+| Like 도메인 | `domain/like/{entity,repository,service,controller,dto}/*` | **2026-05-03 신규 (Step 3)** — 토글 endpoint. 카운터는 DB 트리거 책임 |
+| Scrap 도메인 | `domain/scrap/{entity,repository,service,controller,dto}/*` | **2026-05-03 신규 (Step 3)** — 토글 + 본인 스크랩 목록. `RecipeListMapper` 재사용 |
+| Chat 도메인 | `domain/chat/{entity,repository,service,controller,dto}/*` | **2026-05-03 신규 (Step 5)** — read-only. AI 서버가 primary writer. 채팅방 목록 + 메시지 조회 |
+| Admin 도메인 | `domain/admin/{service,controller,dto}/*` | **2026-05-04 신규 (Step 6)** — pending_recipes 검토(목록/단건) + 승인(→recipes 이동)/반려 + 사용자 차단/해제 |
 | 보조 유틸 | `global/auth/SecurityUtil`, `domain/user/support/AuthorDisplayName` | OK |
-| 명세서 | `docs/spec/recipe-{create,read,delete}.md` (v1, 보존), **`docs/spec/recipe-{create,read,delete}-v2.md`** (2026-05-02 V4 통합 후 신규), `docs/spec/upload-presigned-url.md`, `docs/spec/ai-server-contract.md` (AI 서버 OpenAPI 0.1.0 스냅샷·갭분석) | OK |
+| 명세서 | `docs/spec/recipe-{create,read,delete}.md` (v1, 보존), **`docs/spec/recipe-{create,read,delete}-v2.md`** (2026-05-02 V4 통합 후 신규), `docs/spec/upload-presigned-url.md`, `docs/spec/ai-server-contract.md` (AI 서버 OpenAPI 0.1.0 스냅샷·갭분석), **`docs/spec/like-toggle.md`**, **`docs/spec/scrap-toggle.md`**, **`docs/spec/scrap-list.md`** (Step 3), **`docs/spec/user-me-{get,update}.md`**, **`docs/spec/user-password-change.md`**, **`docs/spec/user-withdraw.md`** (Step 4), **`docs/spec/chat-{room,message}-list.md`** (Step 5), **`docs/spec/admin-pending-recipe-list.md`**, **`docs/spec/admin-recipe-review.md`**, **`docs/spec/admin-user-block.md`** (Step 6), **`docs/spec/user-preferences-{get,update}.md`** (Step 4 후속, 2026-05-04), **`docs/spec/auth-cookie.md`** (2026-05-07, 인증 쿠키 통로) | OK |
 | 로컬 개발 환경 | `docker-compose.yml` (pgvector/pg16) | OK |
 | 온보딩 / 가이드 | `README.md`, `docs/db-testing-guide.md` | OK |
 
@@ -55,12 +65,12 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 
 - ~~**V4 마이그레이션 통합**~~ — **2026-05-02 완료**. 옵션 (b) 변형 채택 (V1 폐기 + 구 V4 가 V1 자리로 이동, V2/V3 는 보존)
 - **Upload (S3 presigned URL) 실제 구현** (명세 있음. 코드는 AWS S3 준비 후 — Step 2-4b)
-- **Like / Scrap** (Step 3)
-- **User 마이페이지 / 탈퇴 익명화** (Step 4)
-- **Chat (read-only)** (Step 5) — Fridge 는 폐기됨 (사용자 결정 2026-05-02)
-- **Admin 도메인** (Step 6)
+- ~~**Like / Scrap** (Step 3)~~ — **2026-05-03 완료**
+- ~~**User 마이페이지 / 탈퇴 익명화** (Step 4)~~ — **2026-05-03 완료** + **2026-05-04 선호도 endpoint 후속 완료** (`user_profiles` 직접 입력 4필드)
+- ~~**Chat (read-only)** (Step 5)~~ — **2026-05-03 완료** (5-2 채팅방 숨김 토글은 AI 서버 합의 후 별도 PR)
+- ~~**Admin 도메인** (Step 6)~~ — **2026-05-04 완료** (pending 검토 / 승인·반려 / 사용자 차단)
 - **AI 서버 연동 모듈** (Step 7)
-- **통합 테스트 / 운영 준비** (Step 8) — `DemoApplicationTests` 는 `com.example.demo` 패키지에 있어 현재 컨텍스트 로딩 불가, Step 8 에서 재배치·재작성
+- **통합 테스트 / 운영 준비** (Step 8) — **2026-05-07 통합 테스트 부분 완료** (Testcontainers + 11개 테스트 통과). CORS / 로깅 / 배포는 미완
 
 ---
 
@@ -118,14 +128,20 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 - [x] 1.5-a. AI 서버 docs 정독 → 갭분석 (`docs/spec/ai-server-contract.md`)
 - [x] 1.5-b. V4 1차 작성 → 통합 이슈 12건 발견 → 옵션 (b) 변형 채택 → V1 자리로 이동 + fixes
 - [x] 1.5-b'. ~~V4 재작성~~ — 본 PR 에서 V1 으로 흡수 완료
-- [ ] 1.5-c. **로컬 DB 재기동 검증**: `docker compose down -v && docker compose up -d && ./gradlew bootRun` 으로 V1→V2→V3 자동 적용 + Hibernate `validate` 통과 확인
+- [x] 1.5-c. **로컬 DB 재기동 검증 — 완료 (2026-05-03)**: `docker compose down -v && docker compose up -d && ./gradlew bootRun` 으로 V1→V2→V3 자동 적용 + Hibernate `validate` 통과. 검증 항목:
+  - Flyway 3행 모두 `success = true` (V2 의 `provider`/`provider_id` IF NOT EXISTS 가 V1 와 충돌 없이 skip 되는 WARN 만 관측 — 정상)
+  - 테이블 10개 (`users`, `user_profiles`, `recipes`, `pending_recipes`, `recipe_stats`, `scraps`, `likes`, `chat_rooms`, `chat_messages`, `flyway_schema_history`) — `fridge` 부재 확인
+  - 트리거 3종 정상 동작: `trigger_recipe_stats_create` (recipes INSERT → stats(0,0) 자동), `trigger_likes_count` / `trigger_scrap_count` (INSERT/DELETE 시 카운터 ±1)
+  - `users` 컬럼 11개 (`is_active`, `deleted_at`, `provider`, `provider_id` 모두 존재. `password_hash` nullable 확인. `uq_provider_provider_id` UNIQUE 제약 V2 가 추가)
+  - `recipes` 컬럼 22개 (`description`, `instructions`, `servings`, `difficulty` CHECK, `tags`/`tips` DEFAULT `'[]'`, `is_active`, `author_type` CHECK, `embedding vector(1536)` 등 모두 존재)
+  - 엔드투엔드 스모크 테스트: `/health` UP → signup → login → `POST /api/recipes` (pendingRecipeId=1, status=PENDING) → `GET /api/recipes/my` (pending row 1건 정상 노출)
 - [x] 1.5-d. `docs/db-testing-guide.md` Flyway 기대값 표 갱신 (V1~V3, V4 제거)
 - [x] 1.5-e. `README.md` 의 마이그레이션 문구 갱신 (V1~V3)
 - [x] 1.5-f. 본 문서 §1 인벤토리 갱신
 - [x] 1.5-g. 엔티티·서비스·DTO 갱신 — 위 "코드 변경 요약" 참조
 - [x] 1.5-h. ~~`SPEC-20260422-02/03/04` v2 명세 발행~~ — **2026-05-02 완료**. `docs/spec/recipe-{create,read,delete}-v2.md` (`SPEC-20260502-02/03/04`)
 - [ ] 1.5-i. AI 서버 팀과 §5 보류 항목 합의 회의
-- [ ] 1.5-j. Step 6 (Admin 승인) 구현 시 `pending_recipes → recipes` 이동 트랜잭션 설계
+- [x] 1.5-j. ~~Step 6 (Admin 승인) 구현 시 `pending_recipes → recipes` 이동 트랜잭션 설계~~ — **2026-05-04 Step 6 에서 구현 완료** (`AdminRecipeService.approve` 트랜잭션, `PENDING_RECIPE_INCOMPLETE` 가드 포함)
 - [ ] 1.5-k. AI 서버가 우리 `recipes.embedding` 을 채우는 메커니즘 합의 (옵션 B 잠정)
 
 ---
@@ -217,39 +233,32 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
    - 본인 작성 레시피 삭제
    - **수정 API 없음** (정책 확정: 영구 불가. 오탈자도 삭제 후 재작성)
    - 응답 DTO 에서 작성자 닉네임은 `users.nickname` 을 그대로 쓰되, 탈퇴 사용자(`deleted_at IS NOT NULL`)는 `"탈퇴한 사용자"` 로 치환
-2. [ ] **Recipe_Stats**
-   - Recipe 와 1:1, 좋아요/스크랩 수 캐시
-   - Like / Scrap 트랜잭션에서 같이 증감
-3. [ ] **Like**
-   - 토글식: POST /api/recipes/{id}/like 한 번에 좋아요/취소
-   - 중복 방지는 DB UNIQUE + 애플리케이션 처리
-4. [ ] **Scrap**
-   - 토글식
-   - 사용자 스크랩 목록 조회
-5. [ ] **User 마이페이지**
-   - 내 정보 조회 / 수정 (닉네임)
-   - 선호도(JSONB) 조회 / 수정
-   - 비밀번호 변경 (LOCAL provider 한정)
-   - **회원 탈퇴 (익명화 방식, 결정 사항 §5 참고)**
-     * `DELETE /api/users/me` — 한 트랜잭션에서 처리
-     * PII 필드 nullify + `nickname = '탈퇴한 사용자_<user_id>'` + `is_blocked = true` + `deleted_at = now()`
-     * 본인의 `scraps`/`likes` 삭제, 해당 레시피들의 `recipe_stats` 카운터 감소
-     * `chat_rooms` / `session_logs` 삭제는 **AI 서버와 합의 후 결정** (현재 보류)
-     * 작성 레시피(`recipes.author_id`)는 유지, 표시 시점에 탈퇴 플래그로 닉네임 치환
-6. [ ] **Chat_Rooms / Session_Logs (조회 전용)**
-   - 내 채팅방 목록
-   - 특정 채팅방의 세션 로그 조회
-   - **쓰기는 AI 서버가 담당 (위 Phase 0 합의 기준)**
+2. [x] **Recipe_Stats** — 2026-05-02 V4 통합 시 DB 트리거로 자동 관리. 애플리케이션 직접 증감 없음
+3. [x] **Like** — 2026-05-03 완료. 토글식 `POST /api/recipes/{id}/like`. UNIQUE + `DataIntegrityViolationException` 흡수
+4. [x] **Scrap** — 2026-05-03 완료. 토글식 + `GET /api/scraps/my`
+5. [x] **User 마이페이지** — 2026-05-03 완료
+   - [x] 내 정보 조회 / 닉네임 수정 (`UserMeService.getMe/updateMe`)
+   - [x] **선호도(`user_profiles`) 조회 / 수정 — 2026-05-04 완료**. `GET/PUT /api/users/me/profile`. `UserProfile` 엔티티·`UserProfileRepository` 신설. PUT 은 직접 입력 4필드 (`userInput`/`cookingSkill`/`preferredCookingTime`/`servingSize`) 만 허용, AI 분석 영역(`allergies` 등) 은 보호 (DTO 부재로 자동 거부). row 없으면 upsert (`UserProfile.empty(userId)` → save). 응답에 AI 분석 결과도 함께 노출 (read-only)
+   - [x] 비밀번호 변경 (LOCAL provider 한정, 소셜은 `SOCIAL_PASSWORD_NOT_ALLOWED`)
+   - [x] **회원 탈퇴 (익명화)**
+     * `DELETE /api/users/me` — 단일 트랜잭션
+     * PII nullify (`email`/`password_hash`/`provider_id` → NULL) + `nickname = '탈퇴한 사용자_<user_id>'` + `is_blocked = true` + `is_active = false` + `deleted_at = NOW()`
+     * 본인의 `scraps`/`likes`/`pending_recipes`/`user_profiles` 삭제. `recipe_stats` 카운터는 V1 의 likes/scraps DELETE 트리거가 자동 감소 (애플리케이션 보정 불필요)
+     * `chat_rooms`/`chat_messages` 삭제는 **AI 서버와 합의 후 결정** (보류)
+     * 작성 레시피(`recipes.author_id`)는 유지, 표시 시점에 닉네임 치환
+6. [x] **Chat (read-only)** — 2026-05-03 완료. V4 통합 후 `chat_rooms` + `chat_messages` (구 `session_logs` 폐기, AI per-message 모델 정합)
+   - [x] 내 채팅방 목록 (`GET /api/chat/rooms`, `is_active=true`, `updated_at DESC`)
+   - [x] 특정 채팅방 메시지 시간순 (`GET /api/chat/rooms/{roomId}/messages`)
+     · `recipe_ids` → 활성 `RecipeListItemResponse` 일괄 매핑 (N+1 방지). 비활성 레시피는 응답에서 제외
+   - [x] **쓰기는 AI 서버가 담당** (Phase 0 합의 그대로)
 7. ~~**Fridge**~~ — **2026-05-02 폐기**. 도메인 자체 미실현. AI 서버가 채팅 컨텍스트로 재료를 직접 받아 처리하므로 별도 영속 저장 불필요.
-8. [ ] **Admin**
-   - 관리자 로그인 (User.role=ADMIN 으로 분기, 별도 로그인 화면은 프론트 책임)
-   - 레시피 승인/반려 (PENDING → APPROVED/REJECTED)
-   - 사용자 차단/차단 해제 (`User.block()` / `unblock()` 이미 있음)
-   - 레시피 승인 시 흐름 (Phase 0-3 확정):
-     1. 트랜잭션: `status = 'APPROVED'` UPDATE 후 커밋
-     2. 커밋 이후 AI 서버 `/internal/embed` 호출 → vector(1536) 반환
-     3. `UPDATE recipes SET embedding = ? WHERE recipe_id = ?`
-     4. 실패 시 승인은 유지, 재시도 큐 또는 스케줄러가 `status='APPROVED' AND embedding IS NULL` 를 주기 재처리
+8. [x] **Admin** — 2026-05-04 완료
+   - [x] 관리자 로그인 — `User.role=ADMIN` 권한 가드 (SecurityConfig 의 `hasRole("ADMIN")` 사용; 별도 로그인 화면은 프론트 책임)
+   - [x] 레시피 검토 — `GET /api/admin/pending-recipes` (status 필터, default PENDING), `GET .../{id}` 단건
+   - [x] 레시피 승인 — `POST /api/admin/pending-recipes/{id}/approve` → `recipes` INSERT (트리거가 `recipe_stats(0,0)` 생성) + `pending_recipes` status=APPROVED. **V4 통합 후 변경**: 구 plan 의 `recipes.status='APPROVED'` UPDATE 가 아니라 **테이블 간 이동**. 누락 필드 검증(`PENDING_RECIPE_INCOMPLETE`) 포함
+   - [x] 레시피 반려 — `POST .../{id}/reject` (사유 필수)
+   - [x] 사용자 차단/해제 — `POST /api/admin/users/{userId}/block` / `unblock`. 멱등 동작
+   - 레시피 승인 시 임베딩 호출은 **AI 서버 옵션 B 잠정 채택** 으로 본 PR 에서 미연동 (Phase 0-3 메모). 옵션 A 합의 시 Step 7 에서 추가
 9. [ ] **Upload (S3 presigned URL)**
    - `POST /api/uploads/presigned-url` → type(recipe/...) 을 받아 presigned PUT URL + 최종 접근 URL 반환
    - MIME 화이트리스트(jpeg/png/webp), 최대 크기, 유효 시간(5분)
@@ -297,21 +306,22 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 
 내가 하는 건: **그 결과물을 받아 검증·저장·재가공하고, 다시 정형화된 응답으로 내보내는 것**.
 
-### 인증 흐름 갱신 (2026-05-02 합의)
+### 인증 흐름 갱신 (2026-05-02 합의 → **2026-05-07 구현 완료**)
 
-기존 Phase 0-1 의 `Authorization: Bearer <JWT>` 만 사용하던 방안이, **JWT 를 HttpOnly Cookie 로 주고받기** 로 합의 변경됨:
+기존 Phase 0-1 의 `Authorization: Bearer <JWT>` 만 사용하던 방안이, **JWT 를 HttpOnly Cookie 로 주고받기** 로 합의 변경됨. 본 합의는 [`docs/spec/auth-cookie.md`](spec/auth-cookie.md) (`SPEC-20260507-01`) 으로 구현 완료:
 
-- 자체 로그인 / 소셜 로그인 모두 응답에서 `Set-Cookie: <jwt_cookie_name>=<JWT>; HttpOnly; Secure; SameSite=Lax/Strict; Path=/` 로 발급
-- 프론트는 별도 토큰 저장소(localStorage 등) 를 쓰지 않고 브라우저가 자동으로 쿠키 동봉
-- API 서버의 `JwtAuthenticationFilter` 는 `Authorization` 헤더 외에 쿠키도 읽도록 확장 필요 (추후 PR)
-- 모바일 앱 호환은 별도 합의 필요 (모바일은 Cookie 가 어색하므로 헤더도 병행 지원)
+- ✅ 자체 로그인 / 소셜 로그인 / 회원가입 응답에서 `Set-Cookie: NAENGO_AT=<JWT>; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400` (+ prod: `Secure`) 발급. body 의 `accessToken` 도 그대로 노출 (모바일 호환)
+- ✅ `JwtAuthenticationFilter` 가 `Authorization` 헤더 우선, 없으면 쿠키 fallback
+- ✅ `POST /api/auth/logout` 신설 — 쿠키 만료 (Max-Age=0). 인증 없이도 호출 가능 (멱등). stateless JWT 라 토큰 자체는 만료 시각까지 유효
+- ✅ `DELETE /api/users/me` (탈퇴) 도 쿠키 만료 동봉
+- ✅ 모바일은 기존 Authorization 헤더 그대로 사용 (응답 body 의 accessToken)
 - AI 서버와의 secret 공유 정책은 그대로 유지 (양쪽 다 같은 secret 으로 JWT 검증)
 
 ---
 
 ## 4. 작업 절차 (코드를 짜기 전에 매번 거치는 루틴)
 
-0. **AI 서버 / 외부 인터페이스 확인** — 본 작업이 AI 서버 / S3 / OAuth 등 외부와 닿는다면 먼저 <http://43.201.62.254:8000/docs> 를 열어 **현재 시점의 contract** 를 확인한다. 이 단계 없이 명세를 쓰면 재작업이 거의 확실.
+0. **AI 서버 / 외부 인터페이스 확인** — 본 작업이 AI 서버 / S3 / OAuth 등 외부와 닿는다면 먼저 [`docs/api-1.json`](api-1.json) (= AI 서버 OpenAPI 로컬 스냅샷, 원본은 <http://43.201.62.254:8000/docs>) 을 열어 **현재 시점의 contract** 를 확인한다. 이 단계 없이 명세를 쓰면 재작업이 거의 확실.
 1. **무엇을 만들지** `docs/spec/` 아래에 `spec-template.md` 형식으로 명세서 작성. AI 서버 호출이 포함되는 명세는 §6 "외부 의존성" 에 호출하는 AI 서버 endpoint 경로·요청 모델·응답 모델을 docs URL 기반으로 명시한다.
 2. 명세서를 LLM(또는 본인)에게 전달 → 코드 생성
 3. 받은 코드 검토, 수정 사항이 생기면 `docs/changes/` 아래에 `change-log-template.md` 형식으로 변경 이력 기록
@@ -368,16 +378,16 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 의존성이 있는 스텝은 앞 스텝 완료 전에는 착수하지 않는다.
 
 > ### 🎯 재조정된 우선순위 (2026-05-02)
-> AI 서버 docs (`http://43.201.62.254:8000/docs`) 가 실제로 떠 있고 계약이 가시화됨에 따라 다음과 같이 우선순위를 재조정한다.
+> AI 서버 docs (`http://43.201.62.254:8000/docs`, 로컬 스냅샷 [`docs/api-1.json`](api-1.json)) 가 실제로 떠 있고 계약이 가시화됨에 따라 다음과 같이 우선순위를 재조정한다.
 >
 > | 순위 | 작업 | 비고 |
 > |---|---|---|
 > | **즉시** | **Step 1.5 — V4 마이그레이션** (V1 보정본) | AI 서버 docs 와 스키마 정합부터 맞춰야 이후 Step 5/6/7 의 계약이 흔들리지 않는다. 본 PR / 본 브랜치(`claude/update-migrations-api-docs-7Y4fU`) 의 1차 산출물. |
 > | 1 | Step 7 일부 — **AI 서버 contract 검토 산출물** | docs URL 의 endpoint 표를 `docs/spec/ai-server-contract.md` 등으로 정리. 코드 작성보다 먼저. **Step 6 / Step 7 본 구현의 전제** 가 됨. |
-> | 2 | Step 3 — Like / Scrap | Recipe 도메인 완성도 끝맺기. AI 서버 의존 없음. |
-> | 3 | Step 4 — User 마이페이지 / 탈퇴 | Step 3 결과(스크랩/좋아요 삭제 대상) 필요. |
-> | 4 | Step 5 — Chat read-only | Fridge 폐기 (2026-05-02) 로 Chat 만 남음. |
-> | 5 | Step 6 — Admin (승인 흐름) | Step 7 의 임베딩 endpoint 가 명확해진 이후. |
+> | ~~2~~ | ~~Step 3 — Like / Scrap~~ | **2026-05-03 완료**. |
+> | ~~3~~ | ~~Step 4 — User 마이페이지 / 탈퇴~~ | **2026-05-03 완료** (선호도 후속 PR). |
+> | ~~4~~ | ~~Step 5 — Chat read-only~~ | **2026-05-03 완료**. 5-2 (채팅방 숨김 토글) 은 AI 서버 합의 후 별도 PR. |
+> | ~~5~~ | ~~Step 6 — Admin (승인 흐름)~~ | **2026-05-04 완료**. 임베딩 호출은 옵션 B 채택으로 미연동. |
 > | 6 | Step 7 본 구현 — AI 서버 클라이언트 | Step 1.5 와 "AI 서버 contract 검토 산출물" 완료 후. |
 > | 7 | Step 2-4b — Upload 실 구현 | AWS S3 버킷 준비 시점에. 변동 없음. |
 > | 마지막 | Step 8 — 운영 준비 / 통합 테스트 | 변동 없음. |
@@ -402,22 +412,33 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 
 ---
 
-### Step 1.5. V4 마이그레이션 — V1 보정본 (**즉시 착수, 2026-05-02 신설**)
+### Step 1.5. V4 통합 — **완료 (2026-05-03)**
 의존: Step 1 완료. **이후 모든 Step 의 전제**.
 
-상세 결정·후보 항목은 §1.5 참조. 요약:
+> **2026-05-04 점검 결과**: 본 §6 Step 1.5 의 옛 [ ] 체크박스가 §1.5 의 실제 진행 상황 (전부 [x]) 과 일관되지 않아 정정. 결정·갭분석·실 작업 모두 끝남. 현 status:
 
-- [ ] 1.5-1. AI 서버 OpenAPI/Swagger (<http://43.201.62.254:8000/docs>) 정독 → `recipes` / `chat_rooms` / `chat_messages` / `users` 와의 컬럼·타입·참조 정합 점검
-- [ ] 1.5-2. 점검 결과를 `docs/spec/ai-server-contract.md` (신규, 임시) 에 표 형태로 캡처 — endpoint 목록 + 우리 DB 와 닿는 모델만
-- [ ] 1.5-3. 정합되지 않는 항목을 `V4__correct_initial_schema.sql` 로 작성 (또는 더 좁은 이름으로 분할)
-  - 알려진 첫 항목: `session_logs.selected_recipe_id` 에 `ON DELETE SET NULL` 부여 (`docs/spec/recipe-delete.md §4-5` 메모)
-  - 추가 항목은 1.5-1 결과로 결정
-- [ ] 1.5-4. `docker compose down -v && docker compose up -d && ./gradlew bootRun` 으로 V1→V2→V3→V4 자동 적용 검증
-- [ ] 1.5-5. Hibernate `validate` 통과 확인 (엔티티 변경이 동반됐다면 함께 PR)
-- [ ] 1.5-6. `docs/db-testing-guide.md` Flyway 기대값 표 4행으로 갱신 + V4 가 만지는 컬럼/제약 검증 항목 추가
-- [ ] 1.5-7. `README.md` 의 "V1~V3" 문구 갱신, 본 문서 §1 인벤토리 갱신
+- [x] 1.5-1. AI 서버 OpenAPI 정독 — 갭분석 산출 [`docs/spec/ai-server-contract.md`](spec/ai-server-contract.md) 발행
+- [x] 1.5-2. 점검 결과 spec 화 — 위 contract spec 의 §3 / §4 표가 정합 매핑
+- [x] 1.5-3. V4 작성 → 통합 이슈 12건 발견 → 사용자 지시로 **옵션 (b) 변형** 채택: V1 폐기 + 구 V4 가 V1 자리 흡수. V2/V3 보존. 자세한 결정 / 변경 내용은 [`docs/changes/V4-integration-resolved.md`](changes/V4-integration-resolved.md)
+  - 알려졌던 항목 (`session_logs.selected_recipe_id ON DELETE SET NULL`) 은 V4 통합 시 `session_logs` 테이블 자체가 폐기되어 자동 해소됨 (per-message `chat_messages` 모델로 전환)
+- [x] 1.5-4. `docker compose down -v && docker compose up -d && ./gradlew bootRun` 으로 V1→V2→V3 자동 적용 검증 — Flyway 3행 모두 success
+- [x] 1.5-5. Hibernate `validate` 통과 확인 — 엔티티 (User / Recipe / RecipeStats / PendingRecipe / Ingredient + RecipeAuthorType enum) 동시 갱신
+- [x] 1.5-6. `docs/db-testing-guide.md` Flyway 기대값 표 갱신 (V1~V3) + V4 신설 테이블·트리거 검증 항목 추가
+- [x] 1.5-7. `README.md` 의 "V1~V3" 문구 갱신, 본 문서 §1 인벤토리 갱신
+- [x] 1.5-8. SPEC 후속 발행 — `recipe-create-v2`, `recipe-read-v2`, `recipe-delete-v2` (`SPEC-20260502-02/03/04`)
 
-**산출물**: `db/migration/V4__*.sql`, `docs/spec/ai-server-contract.md`, 갱신된 `db-testing-guide.md` / `README.md` / 본 문서
+**산출물 (실제)**:
+- `db/migration/V1__init.sql` (= 구 V4 흡수, BIGSERIAL/`fridge` 폐기/`is_active`/triggers 등)
+- `docs/spec/ai-server-contract.md`, `docs/spec/recipe-{create,read,delete}-v2.md`
+- `docs/changes/V4-integration-issues.md`, `docs/changes/V4-integration-resolved.md`
+- 갱신된 `db-testing-guide.md` / `README.md` / 본 문서
+- 엔티티·DTO·서비스·컨트롤러 V4 정합 (Recipe / PendingRecipe / RecipeAuthorType / Ingredient 5필드 / User.is_active 등)
+
+**§1.5 와의 일관성**:
+§1.5 의 1.5-a~h 와 본 §6 의 1.5-1~8 은 동일 작업의 두 시각. 잔여(미완) 후속은 다음 항목들로 §1.5 에 등록 (Step 6/7 / AI 팀 합의 영역):
+- [ ] 1.5-i. AI 서버 팀과 §5 보류 항목 합의 회의
+- [x] 1.5-j. ~~Step 6 (Admin 승인) 구현 시 `pending_recipes → recipes` 이동 트랜잭션 설계~~ — **2026-05-04 Step 6 에서 구현 완료** (`AdminRecipeService.approve` 트랜잭션)
+- [ ] 1.5-k. AI 서버가 우리 `recipes.embedding` 을 채우는 메커니즘 합의 (옵션 B 잠정)
 
 ---
 
@@ -447,50 +468,132 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 
 ---
 
-### Step 3. Engagement (Like, Scrap)
+### Step 3. Engagement (Like, Scrap) — **완료 (2026-05-03)**
 의존: Step 2 완료.
 
-- [ ] 3-1. 명세서 `docs/spec/like-toggle.md` 작성 → 구현 (`POST /api/recipes/{id}/like` 토글)
-- [ ] 3-2. 명세서 `docs/spec/scrap-toggle.md` + `docs/spec/scrap-list.md` 작성 → 구현
-- [ ] 3-3. Like/Scrap 트랜잭션 안에서 `recipe_stats.likes_count` / `scrap_count` 증감
-- [ ] 3-4. 동시성: `recipe_stats` UPDATE 에 낙관적 락 또는 `SELECT ... FOR UPDATE` 중 택 1
+- [x] 3-1. 명세서 `docs/spec/like-toggle.md` (`SPEC-20260503-01`) → 구현 (`POST /api/recipes/{id}/like` 토글)
+- [x] 3-2. 명세서 `docs/spec/scrap-toggle.md` (`SPEC-20260503-02`) + `docs/spec/scrap-list.md` (`SPEC-20260503-03`) → 구현
+- [x] ~~3-3. Like/Scrap 트랜잭션 안에서 `recipe_stats.likes_count` / `scrap_count` 증감~~ — **폐기**: V1 의 DB 트리거(`trigger_likes_count`, `trigger_scrap_count`) 가 단독 책임. 애플리케이션은 `entityManager.flush()` 후 재조회로 카운트만 읽음
+- [x] ~~3-4. 동시성: `recipe_stats` UPDATE 에 낙관적 락 또는 `SELECT ... FOR UPDATE` 중 택 1~~ — **폐기**: 트리거가 atomic UPDATE 로 처리. race condition 안전망은 `(user_id, recipe_id)` UNIQUE 제약 + `DataIntegrityViolationException` 흡수
 
-**산출물**: 명세서 3건, `domain/like/*`, `domain/scrap/*`
+**산출물 (실제)**:
+- 명세서 3건 (`like-toggle`, `scrap-toggle`, `scrap-list`)
+- `domain/like/{entity,repository,service,controller,dto}/*` (Like, LikeRepository, LikeService, LikeController, LikeToggleResponse)
+- `domain/scrap/{entity,repository,service,controller,dto}/*` (Scrap, ScrapRepository, ScrapService, ScrapController, ScrapToggleResponse)
+- `domain/recipe/support/RecipeListMapper` 신규 — `Page<Recipe>` → `RecipeListResponse` 매핑을 RecipeService 와 ScrapService 가 공유 (N+1 방지 + 작성자 닉네임 일괄 조회 패턴)
+- 검증: 빌드 + 로컬 docker 부팅 + 토글 3회 왕복(0→1→0→1) + `/api/scraps/my` 정상 노출 + 401/404 에러 케이스 확인
+
+**알려진 미흡**:
+- ~~인증 없이 보호 endpoint 호출 시 응답이 401 이 아닌 **403** 으로 떨어짐~~ — **2026-05-04 해결** (`JwtAuthenticationEntryPoint` 추가). 미인증 → 401 + ApiResponse 로 일관됨.
 
 ---
 
-### Step 4. User 마이페이지 + 회원 탈퇴(익명화)
+### Step 4. User 마이페이지 + 회원 탈퇴(익명화) — **완료 (2026-05-03)**
 의존: Step 1 (deleted_at 마이그레이션) + Step 3 (스크랩/좋아요 삭제 대상).
 
-- [ ] 4-1. 명세서 `docs/spec/user-me-get.md`, `docs/spec/user-me-update.md` 작성 → 구현 (닉네임·선호도)
-- [ ] 4-2. 명세서 `docs/spec/user-password-change.md` 작성 → 구현 (LOCAL provider 한정)
-- [ ] 4-3. 명세서 `docs/spec/user-withdraw.md` 작성 → 구현 (`DELETE /api/users/me`, 익명화 트랜잭션)
-  - PII nullify + `nickname = '탈퇴한 사용자_<user_id>'` + `is_blocked = true` + `deleted_at = now()`
-  - `scraps` / `likes` 삭제 + `recipe_stats` 카운터 보정
-  - `chat_rooms` / `session_logs` 삭제는 AI 서버 합의 전까지 **보류**
+- [x] 4-1. `docs/spec/user-me-get.md` (`SPEC-20260503-04`), `docs/spec/user-me-update.md` (`SPEC-20260503-05`) → 구현 (닉네임만)
+- [x] 4-2. `docs/spec/user-password-change.md` (`SPEC-20260503-06`) → 구현 (LOCAL 한정, 소셜은 `SOCIAL_PASSWORD_NOT_ALLOWED`)
+- [x] 4-3. `docs/spec/user-withdraw.md` (`SPEC-20260503-07`) → 구현 (`DELETE /api/users/me`, 단일 트랜잭션)
+  - PII nullify (`email` / `password_hash` / `provider_id` → NULL) + `nickname = '탈퇴한 사용자_<user_id>'` + `is_blocked = true` + `is_active = false` + `deleted_at = NOW()`
+  - `scraps` / `likes` / `pending_recipes` / `user_profiles` 삭제 — `recipe_stats` 카운터는 트리거 자동 감소
+  - `chat_rooms` / `chat_messages` 삭제는 AI 서버 합의 전까지 **보류**
 
-**산출물**: 명세서 4건, `domain/user/*` 확장
+**V1 후속 변경**:
+- `users.email` `NOT NULL` → nullable 로 완화 (익명화 시 NULL 처리하기 위해). UNIQUE 제약은 다중 NULL 허용으로 영향 없음
+- `User.email` 엔티티도 `nullable = false` 제거 (스키마와 정합)
+
+**산출물 (실제)**:
+- 명세서 4건 (`user-me-get`, `user-me-update`, `user-password-change`, `user-withdraw`)
+- `domain/user/dto/{UserMeResponse, UserUpdateRequest, PasswordChangeRequest}.java`
+- `domain/user/service/UserMeService.java`
+- `domain/user/controller/UserMeController.java`
+- `domain/user/entity/User.java` 확장 (`changeNickname`, `changePasswordHash`, `anonymize` 메서드)
+- `domain/like/repository/LikeRepository`, `domain/scrap/repository/ScrapRepository`, `domain/recipe/repository/PendingRecipeRepository` 에 `deleteAllByUserId` 추가
+- `ErrorCode` 에 `SOCIAL_PASSWORD_NOT_ALLOWED`, `ALREADY_WITHDRAWN` 추가
+
+**후속 (2026-05-04 완료)**:
+- ~~`user_profiles` 선호도 endpoint~~ — **완료**. `docs/spec/user-preferences-{get,update}.md` (`SPEC-20260504-04/05`). `UserProfile` 엔티티 + `UserProfileRepository` 신설. `UserMeService.getPreferences/updatePreferences` 추가, `UserMeController` 에 `GET/PUT /api/users/me/profile` 노출. 직접 입력 4필드만 갱신 가능, AI 분석 영역은 보호. 탈퇴 트랜잭션도 `userProfileRepository.deleteAllByUserId` 호출하도록 변경 (구 native query 폐기)
+- ~~알려진 미흡: 미인증 → 401 응답 일관~~ — **2026-05-04 완료**. `JwtAuthenticationEntryPoint` (401) + `JwtAccessDeniedHandler` (403) 신설. 모든 미인증 / 미인가 응답이 ApiResponse 일관 형식 (`{success: false, message}`) 으로 정상화
+
+**범위 밖 (남은 후속)**:
+- 비밀번호 변경 시 기존 토큰 강제 무효화 (stateless JWT 한계)
+- 탈퇴 시 AI 서버 측 채팅 데이터 파기 동기화 (AI 팀 합의 보류)
+- `recent_recipe_ids` 풀 RecipeListItemResponse 변환 — 본 spec 범위 밖, 클라이언트가 별도 호출
+
+**알려진 동작**:
+- 탈퇴된 사용자가 살아있는 토큰으로 재호출 시: 명세상 409 `ALREADY_WITHDRAWN` 이지만 실제로는 `CustomUserDetailsService` 의 `is_blocked` 체크가 먼저 발화하여 **403** 이 떨어짐. 방어 in depth 로 수용 (사용자는 동일하게 차단됨)
 
 ---
 
-### Step 5. Chat (read-only)
-의존: Step 4 완료 (사용자 컨텍스트 정비 후). **Fridge 폐기 (2026-05-02)** 로 본 Step 의 범위는 Chat 만.
+### Step 5. Chat (read-only) — **완료 (2026-05-03)**
+의존: Step 4 완료. **Fridge 폐기 (2026-05-02)** 로 본 Step 의 범위는 Chat 만.
 
-- [ ] 5-1. 명세서 `docs/spec/chat-room-list.md`, `docs/spec/chat-message-list.md` → 구현 (read-only)
-- [ ] 5-2. 채팅방 숨김 토글 (`is_active=false`) — AI 서버의 `DELETE /api/v1/chat/rooms/{room_id}` 와 권한 책임 합의 후
+- [x] 5-1. `docs/spec/chat-room-list.md` (`SPEC-20260503-08`), `docs/spec/chat-message-list.md` (`SPEC-20260503-09`) → 구현 (read-only)
+- [ ] 5-2. 채팅방 숨김 토글 (`is_active=false`) — **보류**: AI 서버의 `DELETE /api/v1/chat/rooms/{room_id}` 와 권한 책임 합의 후 별도 PR
 
-**산출물**: 명세서 2건, `domain/chat/*` (read-only)
+**산출물 (실제)**:
+- 명세서 2건 (`chat-room-list`, `chat-message-list`)
+- `domain/chat/{entity,repository,service,controller,dto}/*`
+  - `ChatRoom`, `ChatMessage` 엔티티 (read-only — INSERT/UPDATE/DELETE 코드 없음)
+  - `ChatRoomRepository.findActiveByUserOrderByLatestUpdated`
+  - `ChatMessageRepository.findByRoomIdOrderByCreatedAt`
+  - `ChatService.listMyRooms`, `listMessages` (권한 검증 + recipe lookup 일괄 처리)
+  - `ChatController` — `GET /api/chat/rooms`, `GET /api/chat/rooms/{roomId}/messages`
+  - DTO: `ChatRoomListItemResponse` (AI `ChatRoomResponse` 정합), `ChatRoomListResponse`, `ChatMessageResponse`, `ChatMessageListResponse`
+- `RecipeRepository.findActiveByIds(Collection<Long>)` 추가 (메시지의 recipe_ids 일괄 조회 + JOIN FETCH stats)
+- `RecipeListMapper.toItems(List<Recipe>)` 추가 (페이지 래퍼 없는 단순 리스트 매핑 — 채팅 메시지의 recipes 필드용)
+- `ErrorCode` 에 `CHAT_ROOM_NOT_FOUND` 추가
+
+**검증**:
+- 빌드 PASS, docker + bootRun 부팅 OK
+- 스모크 테스트:
+  · 본인 활성 채팅방 2건 정렬 (`updated_at DESC`) ✓
+  · 메시지 목록 — `recipes` 필드 정확 매핑 (활성 1건만, 비활성 1건 제외) ✓
+  · 추천 없는 메시지 → `recipes: null` ✓
+  · 다른 사용자 채팅방 접근 → 403 FORBIDDEN ✓
+  · 본인 비활성 채팅방 → 404 CHAT_ROOM_NOT_FOUND ✓
+  · 존재하지 않는 roomId → 404 ✓
+
+**알려진 동작 / 후속**:
+- 본 PR 은 read-only. 5-2 (`PATCH /api/chat/rooms/{id}/visibility` 같은 형태) 은 AI 서버 권한 / DELETE endpoint 책임 합의 후
+- 메시지 페이징 미적용 (한 채팅방 메시지 < 100 가정). 큰 채팅방 케이스가 생기면 cursor 페이징 도입
+- 비활성 레시피 placeholder 표시 (예: "삭제된 레시피") 미적용 — UX 결정 시 추가
 
 ---
 
-### Step 6. Admin
-의존: Step 2 완료 (승인 대상 Recipe 존재).
+### Step 6. Admin — **완료 (2026-05-04)**
+의존: Step 2 완료, Step 1.5 (V4 통합).
 
-- [ ] 6-1. 명세서 `docs/spec/admin-recipe-approve.md` → 승인/반려 엔드포인트. 승인 시 AI 서버 임베딩 호출은 **Step 7 완료 후** 연동 (우선 DB 상태만 변경해도 OK — 임베딩은 NULL 인 채로 남음)
-- [ ] 6-2. 명세서 `docs/spec/admin-user-block.md` → 차단/해제
-- [ ] 6-3. 관리자 권한 가드 (`ADMIN` 역할 필수 어노테이션 또는 시큐리티 설정)
+- [x] 6-1. 명세서 + 구현 — pending 검토 / 승인 / 반려:
+  - `docs/spec/admin-pending-recipe-list.md` (`SPEC-20260504-01`) — 목록 / 단건 (status 필터, ADMIN 검토용)
+  - `docs/spec/admin-recipe-review.md` (`SPEC-20260504-02`) — 승인 / 반려
+  - 승인 흐름 (V4 통합 후 갱신): `pending_recipes (PENDING)` → 검증(`PENDING_RECIPE_INCOMPLETE`) → `recipes` INSERT (`is_active=true`, `author_type='USER'`) + 트리거가 `recipe_stats(0,0)` 자동 생성 → `pending_recipes` UPDATE (`status='APPROVED'`, `admin_note`, `reviewed_at`). pending row 보존 (사용자가 `/my` 에서 결과 확인)
+  - AI 서버 임베딩 호출은 옵션 B (AI 자체 cron) 잠정 채택으로 **미연동**. 옵션 A 변경 시 Step 7 에서 추가
+- [x] 6-2. `docs/spec/admin-user-block.md` (`SPEC-20260504-03`) → 차단 / 해제. 멱등 동작. 탈퇴 사용자(`ALREADY_WITHDRAWN`) 방어
+- [x] 6-3. 관리자 권한 가드 — SecurityConfig 기존 `.requestMatchers("/api/admin/**").hasRole("ADMIN")` 활용. 추가 코드 불필요
 
-**산출물**: 명세서 2건, `domain/admin/*`
+**산출물 (실제)**:
+- 명세서 3건 (`admin-pending-recipe-list`, `admin-recipe-review`, `admin-user-block`)
+- `domain/admin/{service,controller,dto}/*` (DTO 8개, Service 2개, Controller 2개)
+- `domain/recipe/repository/PendingRecipeRepository.findByStatusOrderByLatest` 추가
+- `PendingRecipe` 엔티티에 `markApproved(adminNote)` / `markRejected(reason)` 메서드 추가
+- `ErrorCode.PENDING_RECIPE_NOT_REVIEWABLE` (409), `PENDING_RECIPE_INCOMPLETE` (422) 추가
+
+**검증**:
+- 빌드 PASS, docker + bootRun OK
+- 스모크 테스트 (alice=USER + admin=ADMIN, alice 가 미완성/완성 pending 1건씩 제출):
+  · USER 토큰으로 admin endpoint → 403 ✓
+  · ADMIN: PENDING 목록 → 2건 ✓
+  · 미완성 승인 → 422 PENDING_RECIPE_INCOMPLETE ✓
+  · 완성 승인 → 200, recipeId 반환, recipes 에 row 생성 ✓
+  · 같은 pending 재승인 → 409 PENDING_RECIPE_NOT_REVIEWABLE ✓
+  · 반려 사유 누락 → 400 ✓
+  · 반려 정상 → 200, status=REJECTED + admin_note ✓
+  · 승인 후 `/api/recipes` 공개 목록에 등장 ✓
+  · 승인 후 alice `/my` 에 status=APPROVED + REJECTED 둘 다 노출 ✓
+  · 사용자 차단 → 200, alice 의 다음 endpoint 호출에서 403 ✓
+  · 차단 해제 → 200 ✓
+  · 없는 사용자 차단 → 404 USER_NOT_FOUND ✓
 
 ---
 
@@ -514,16 +617,27 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 
 ---
 
-### Step 8. 운영 준비 (배포 직전)
+### Step 8. 운영 준비 (배포 직전) — **부분 완료 (8-4 통합 테스트 2026-05-07 완료)**
 의존: Step 1~7 완료.
 
-- [ ] 8-1. CORS 설정 (프론트 도메인 화이트리스트)
-- [ ] 8-2. 운영 secret 외부화 (JWT secret, DB 접속정보, AWS 키, 내부 토큰)
-- [ ] 8-3. 로깅 정책 정리 (요청 ID, 사용자 ID 마스킹, PII 로그 금지)
-- [ ] 8-4. 통합 테스트: 로그인 → 레시피 작성 → 관리자 승인 → 임베딩 생성 → 스크랩 → 탈퇴, 이 end-to-end 1개
+- [x] 8-1. **CORS 설정 — 2026-05-07 완료**. `cors.allowed-origins` (기본 `localhost:3000,5173` / 운영 env 주입), allowed-methods / allowed-headers / exposed-headers (`Set-Cookie` 노출) / max-age=3600. `allowCredentials=true` 고정 (쿠키 인증 호환). 통합 테스트 4건 (`CorsIntegrationTest`)
+- [x] 8-2. **운영 secret 외부화 — 2026-05-08 점검 완료**.
+  - `application-prod.yml` 에 default 없는 env 자리표시자: `DB_URL/USERNAME/PASSWORD`, `JWT_SECRET`, `KAKAO_REST_API_KEY/REDIRECT_URI`, `CORS_ALLOWED_ORIGINS` (누락 시 부팅 실패). `AUTH_COOKIE_SECURE: true` 명시 override.
+  - `application.yml` 의 default (`localhost:3000` 등) 가 prod 에 새지 않게 강제 — 로컬에만 적용
+  - AI 서버 base URL / 내부 토큰은 Step 7 진행 시 추가 (옵션 A 선택 시)
+  - 구글 OAuth 는 미실현이므로 prod env 미요구 (`docs/changes/oauth-google-status.md`)
+  - README 의 환경변수 표 갱신 — prod 필수 ✅ 표시 + 그룹별 (DB / JWT / CORS / OAuth / AWS) 구조
+- [x] 8-3. **로깅 정책 — 2026-05-08 완료**. `RequestIdFilter` 가 `X-Request-Id` 자동 부여 + MDC put + 응답 헤더 echo. `JwtAuthenticationFilter` 가 인증 성공 시 MDC `userId` put. `logback-spring.xml` 패턴에 `[%X{requestId}] [user=%X{userId}]`. PII 로그 금지 정책은 [`docs/changes/logging-policy.md`](changes/logging-policy.md). 통합 테스트 4건 (`RequestIdIntegrationTest`)
+- [x] 8-4. **통합 테스트** — 2026-05-07 완료
+  - 인프라: Testcontainers (`pgvector/pgvector:pg16` singleton, JVM 단위 공유) + Spring Boot 4 `@SpringBootTest(RANDOM_PORT)` + Spring 6 `RestClient`
+  - 베이스: `IntegrationTestSupport` — Postgres testcontainer + Flyway 자동 적용 + 각 테스트 후 9개 테이블 TRUNCATE 격리
+  - `AuthCookieIntegrationTest` (8건) — `SPEC-20260507-01` 검증: signup/login Set-Cookie + 헤더/쿠키/둘다/없음 분기 + logout / withdraw 만료
+  - `RecipeFlowIntegrationTest` (3건) — E2E: alice signup → recipe submit → admin approve (recipe_stats 트리거 검증) → bob like/scrap (counter 트리거) → /scraps/my → /recipes/my APPROVED 갱신 → alice 탈퇴 → 닉네임 치환 + bob counter 보존. + 422 PENDING_RECIPE_INCOMPLETE / 403 admin guard
+  - 폐기: 옛 `src/test/java/com/example/demo/DemoApplicationTests.java` (잘못된 패키지) 제거 + `com.naengo.api_server.integration` 으로 정식 이전
+  - build.gradle: `testcontainersVersion=1.21.4` BOM (1.20.4 의 docker-java 가 client API 1.32 → docker daemon 1.40 요구와 충돌하여 업그레이드)
 - [ ] 8-5. AWS 배포 파일럿 (RDS + S3 + EC2/ECS 중 택일, 인프라 담당자와 합의)
 
-**산출물**: 운영 가능 상태의 서버 + 최소 1개의 통합 테스트
+**산출물**: 운영 가능 상태의 서버 + 통합 테스트 11건 (2026-05-07 시점)
 
 ---
 
@@ -536,6 +650,7 @@ API 서버는 **"앱(프론트)과 1차로 마주하고, 도메인 데이터의 
 - [x] ~~`ErrorCode` 선언만 있고 쓰이지 않는 Recipe/Chat 코드 정리~~ — `RECIPE_ALREADY_LIKED/SCRAPPED`(토글 설계상 불필요), `CHAT_ROOM_NOT_FOUND/SESSION_NOT_FOUND`(Step 5 에서 재도입) 4건 제거. 정책: "사용되는 시점에 추가"
 - [ ] 예외 메시지 i18n 필요 여부 검토
 - [ ] pre-commit 훅 또는 Spotless 같은 포맷터 도입 검토
-- [ ] 기동 시 표시되는 사소한 경고 2건 정리 (Step 1 검증 시 발견)
-  - `HHH90000025: PostgreSQLDialect does not need to be specified explicitly` → `application.yml` 의 `spring.jpa.properties.hibernate.dialect` 라인 제거 (Hibernate 7 자동 선택)
-  - `spring.jpa.open-in-view is enabled by default` → `application.yml` 에 `spring.jpa.open-in-view: false` 명시 (REST API 서버 정석)
+- [x] ~~기동 시 표시되는 사소한 경고 2건 정리~~ — **2026-05-07 완료**
+  - [x] `HHH90000025: PostgreSQLDialect ...` → `application.yml` 의 `spring.jpa.properties.hibernate.dialect` 라인 제거 (Hibernate 7 자동 선택)
+  - [x] `spring.jpa.open-in-view is enabled by default` → `application.yml` 에 `spring.jpa.open-in-view: false` 명시 (REST API 서버 정석)
+  - 검증: `bootRun` 부팅 로그에 두 경고 모두 미발생. 잔존 WARN 은 V2 의 `IF NOT EXISTS` 가 V1 컬럼을 skip 하는 정상 동작 2건만

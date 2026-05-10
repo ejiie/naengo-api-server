@@ -5,13 +5,13 @@ import com.naengo.api_server.domain.recipe.dto.PendingRecipeListResponse;
 import com.naengo.api_server.domain.recipe.dto.RecipeCreateRequest;
 import com.naengo.api_server.domain.recipe.dto.RecipeCreateResponse;
 import com.naengo.api_server.domain.recipe.dto.RecipeDetailResponse;
-import com.naengo.api_server.domain.recipe.dto.RecipeListItemResponse;
 import com.naengo.api_server.domain.recipe.dto.RecipeListResponse;
 import com.naengo.api_server.domain.recipe.entity.PendingRecipe;
 import com.naengo.api_server.domain.recipe.entity.Recipe;
 import com.naengo.api_server.domain.recipe.entity.RecipeStats;
 import com.naengo.api_server.domain.recipe.repository.PendingRecipeRepository;
 import com.naengo.api_server.domain.recipe.repository.RecipeRepository;
+import com.naengo.api_server.domain.recipe.support.RecipeListMapper;
 import com.naengo.api_server.domain.user.entity.User;
 import com.naengo.api_server.domain.user.repository.UserRepository;
 import com.naengo.api_server.domain.user.support.AuthorDisplayName;
@@ -26,9 +26,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -40,6 +38,7 @@ public class RecipeService {
     private final RecipeRepository recipeRepository;
     private final PendingRecipeRepository pendingRecipeRepository;
     private final UserRepository userRepository;
+    private final RecipeListMapper recipeListMapper;
 
     @Value("${aws.s3.public-url-prefix:}")
     private String s3PublicUrlPrefix;
@@ -86,7 +85,7 @@ public class RecipeService {
             case "latest"  -> recipeRepository.findActiveOrderByLatest(pageable);
             default        -> throw new CustomException(ErrorCode.INVALID_INPUT);
         };
-        return toListResponse(result);
+        return recipeListMapper.toResponse(result);
     }
 
     /**
@@ -181,50 +180,6 @@ public class RecipeService {
     }
 
     // ─── 내부 유틸 ─────────────────────────────────────────
-
-    private RecipeListResponse toListResponse(Page<Recipe> page) {
-        List<Recipe> content = page.getContent();
-
-        // 작성자 닉네임 일괄 조회 (N+1 방지)
-        List<Long> authorIds = content.stream()
-                .map(Recipe::getAuthorId)
-                .filter(java.util.Objects::nonNull)
-                .distinct()
-                .toList();
-        Map<Long, String> nicknameMap = new HashMap<>();
-        if (!authorIds.isEmpty()) {
-            userRepository.findAllById(authorIds)
-                    .forEach(u -> nicknameMap.put(u.getUserId(), u.getNickname()));
-        }
-
-        List<RecipeListItemResponse> items = content.stream().map(r -> {
-            RecipeStats s = r.getStats();
-            int likes = s == null ? 0 : s.getLikesCount();
-            int scraps = s == null ? 0 : s.getScrapCount();
-            String raw = r.getAuthorId() == null ? null : nicknameMap.get(r.getAuthorId());
-            return new RecipeListItemResponse(
-                    r.getRecipeId(),
-                    r.getTitle(),
-                    r.getDescription(),
-                    r.getImageUrl(),
-                    AuthorDisplayName.of(raw),
-                    r.getAuthorType(),
-                    r.getDifficulty(),
-                    r.getCookingTime(),
-                    likes,
-                    scraps,
-                    r.getCreatedAt()
-            );
-        }).collect(Collectors.toList());
-
-        return new RecipeListResponse(
-                items,
-                page.getNumber(),
-                page.getSize(),
-                page.getTotalElements(),
-                page.getTotalPages()
-        );
-    }
 
     private String resolveNickname(Long authorId) {
         if (authorId == null) return null;

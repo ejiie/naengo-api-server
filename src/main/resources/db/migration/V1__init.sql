@@ -27,7 +27,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE users (
     user_id       BIGSERIAL    PRIMARY KEY,
-    email         VARCHAR(255) NOT NULL UNIQUE,
+    email         VARCHAR(255) UNIQUE,                                   -- nullable: 회원 탈퇴 익명화 시 NULL (UNIQUE 는 다중 NULL 허용)
     password_hash VARCHAR(255),                                          -- 소셜 로그인 사용자는 NULL
     nickname      VARCHAR(50)  NOT NULL UNIQUE,
     role          VARCHAR(20)  NOT NULL DEFAULT 'USER' CHECK (role IN ('USER', 'ADMIN')),
